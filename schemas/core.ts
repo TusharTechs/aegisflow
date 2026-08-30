@@ -51,6 +51,14 @@ export const IncidentSchema = z.object({
   revenueExposure: z.number(),
   state: WorkflowState,
   alternativeSuppliers: z.array(SupplierSchema),
+  decision: z.object({
+    recommendedSupplierId: z.string(),
+    confidence: z.number().min(0).max(100),
+    reasoning: z.string(),
+    risks: z.array(z.string()),
+    unknowns: z.array(z.string()),
+    source: z.enum(["gemini", "fallback"]),
+  }).optional(),
   auditLog: z.array(z.object({
     timestamp: z.string(),
     event: z.string(),

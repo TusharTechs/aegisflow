@@ -23,7 +23,31 @@ export function DecisionPanel({ incident, recommendation }: { incident: Incident
                 <span className="text-sm font-semibold">{recommendation.supplier.name}</span>
                 <Badge variant="success">{recommendation.score}/100</Badge>
               </div>
-              <p className="text-xs text-muted-foreground">{recommendation.reasoning}</p>
+              {incident.decision && (
+                <>
+                  <p className="text-xs leading-relaxed text-muted-foreground">{incident.decision.reasoning}</p>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Badge variant="info">Confidence {incident.decision.confidence}%</Badge>
+                    <span>Reasoning: {incident.decision.source === "gemini" ? "Gemini" : "Deterministic fallback"}</span>
+                  </div>
+                  {incident.decision.risks.length > 0 && (
+                    <div className="space-y-1 pt-1">
+                      <p className="text-xs font-medium text-destructive">Risks</p>
+                      {incident.decision.risks.map((r, i) => (
+                        <p key={i} className="text-xs text-muted-foreground">• {r}</p>
+                      ))}
+                    </div>
+                  )}
+                  {incident.decision.unknowns.length > 0 && (
+                    <div className="space-y-1 pt-1">
+                      <p className="text-xs font-medium text-warning">Unknowns</p>
+                      {incident.decision.unknowns.map((u, i) => (
+                        <p key={i} className="text-xs text-muted-foreground">• {u}</p>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
 
             {incident.state === "HUMAN_REVIEW" && (

@@ -1,0 +1,66 @@
+import { z } from "zod";
+import { Incident } from "@/schemas/core";
+import { RankedSupplier } from "@/lib/suppliers/ranking";
+import { VerificationReport } from "@/lib/agents/verification";
+import { generateStructured } from "@/lib/ai/gemini";
+
+export interface Decision {
+  recommendedSupplierId: string;
+  confidence: number;
+  reasoning: string;
+  risks: string[];
+  unknowns: string[];
+  source: "gemini" | "fallback";
+}
+
+const Schema = z.object({
+  reasoning: z.string(),
+  risks: z.array(z.string()).max(4),
+  unknowns: z.array(z.string()).max(4),
+});
+
+export async function explainDecision(
+  incident: Incident,
+  ranked: RankedSupplier[],
+  report: VerificationReport
+): Promise<Decision> {
+  const top = ranked[0];
+  const worst = ranked[ranked.length - 1];
+  const confidence = Math.round(top.score * 0.5 + top.evidenceScore * 0.5);
+
+  const fallback = {
+    reasoning:
+      `${top.reasoning}. ${top.supplier.name} leads on delivery evidence and claim confidence. ` +
+      `${worst.supplier.name} was not recommended despite lower cost due to unresolved evidence conflicts.`,
+    risks: report.flagged.map((f) => `${f.claim.text} — ${f.claim.conflictReason ?? "unverified"}`).slice(0, 4),
+    unknowns: ["Live certification registry check pending", "Customer order impact assessment pending"],
+  };
+
+  const facts = ranked.map((r) => ({
+    supplier: r.supplier.name,
+    score: r.score,
+    leadTimeDays: r.supplier.leadTimeDays,
+    costMultiplier: r.supplier.costMultiplier,
+    verifiedClaims: r.verified,
+    conflicts: r.conflicts,
+  }));
+
+  const res = await generateStructured({
+    schema: Schema,
+    fallback,
+    prompt:
+      `You are the Decision agent for AegisFlow. The deterministic risk model ranked ${top.supplier.name} first ` +
+      `for incident ${incident.id} (${incident.affectedProduct}). Facts: ${JSON.stringify(facts)}. ` +
+      `Explain the recommendation in 2-3 sentences and list real risks/unknowns from the facts only. ` +
+      `Return JSON matching the schema. Do not invent facts.`,
+  });
+
+  return {
+    recommendedSupplierId: top.supplier.id,
+    confidence,
+    reasoning: res.value.reasoning || fallback.reasoning,
+    risks: res.value.risks.length ? res.value.risks : fallback.risks,
+    unknowns: res.value.unknowns.length ? res.value.unknowns : fallback.unknowns,
+    source: res.source,
+  };
+}

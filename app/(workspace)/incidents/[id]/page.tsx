@@ -5,12 +5,11 @@ import { rankSuppliers } from "@/lib/suppliers/ranking";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BusinessImpact } from "@/components/incidents/business-impact";
-import { ResponseTimeline } from "@/components/incidents/response-timeline";
+import { InvestigationConsole } from "@/components/incidents/investigation-console";
 import { EvidenceSummary } from "@/components/incidents/evidence-summary";
 import { SupplierComparison } from "@/components/incidents/supplier-comparison";
 import { DecisionPanel } from "@/components/incidents/decision-panel";
 import { AuditTrail } from "@/components/incidents/audit-trail";
-import { RunResponseButton } from "@/components/incidents/run-response-button";
 
 type Props = { params: Promise<{ id: string }> | { id: string } };
 
@@ -35,17 +34,13 @@ export default async function IncidentPage({ params }: Props) {
             <span className="font-mono">{incident.id}</span> · Supplier disruption · {incident.affectedProduct}
           </p>
         </div>
-        {incident.state === "INVESTIGATING" ? (
-          <RunResponseButton id={incident.id} />
-        ) : (
-          <Badge variant="info">{incident.state.replace(/_/g, " ")}</Badge>
-        )}
+        {investigated && <Badge variant="info">{incident.state.replace(/_/g, " ")}</Badge>}
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           <BusinessImpact incident={incident} />
-          <ResponseTimeline incident={incident} />
+          <InvestigationConsole incident={incident} />
           <EvidenceSummary incident={incident} />
           <SupplierComparison ranked={ranked} showScores={investigated} />
           <Card>

@@ -1,6 +1,7 @@
 import { appendAudit, getIncident, transitionIncident } from "@/lib/incidents/repository";
 import { analyzeIncident } from "@/lib/agents/incident-analyst";
-import { runWebIntelligence } from "@/lib/agents/web-intelligence";
+import { runWebIntelligence, buildQueries } from "@/lib/agents/web-intelligence";
+import { runDocumentIntelligence, mergeDocClaims } from "@/lib/agents/document-intelligence";
 import { verifyClaims, corroborationBySupplier } from "@/lib/agents/verification";
 import { explainDecision } from "@/lib/agents/decision";
 import { rankSuppliers } from "@/lib/suppliers/ranking";
@@ -8,7 +9,7 @@ import { rankSuppliers } from "@/lib/suppliers/ranking";
 export interface InvestigationStep {
   message: string;
   actor: "SYSTEM" | "AI";
-  tag?: "LIVE" | "DEMO SEEDED";
+  tag?: "LIVE" | "DEMO SEEDED" | "LOCAL";
 }
 
 const pace = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -29,8 +30,8 @@ export async function* runInvestigation(id: string): AsyncGenerator<Investigatio
   yield push({ message: `Analyst: ${analyst.summary}`, actor: "AI" });
   await pace(300);
 
-  // ── Web Intelligence (SerpApi, live when configured) ─────────────
-  const planned = (await import("@/lib/agents/web-intelligence")).buildQueries(incident);
+  // ── Web Intelligence (SerpApi) ───────────────────────────────────
+  const planned = buildQueries(incident);
   yield push({ message: `Searching live web sources… (${planned.length} queries)`, actor: "AI" });
   await pace(400);
 
@@ -45,16 +46,31 @@ export async function* runInvestigation(id: string): AsyncGenerator<Investigatio
   await pace(350);
 
   const corr = corroborationBySupplier(incident);
-  const corrSummary = incident.alternativeSuppliers
-    .map((s) => `${s.name.split(" ")[0]}: ${corr[s.id] ?? 0}`)
-    .join(" · ");
-  yield push({ message: `External corroboration — ${corrSummary}`, actor: "AI", tag: webTag });
+  yield push({
+    message: `External corroboration — ${incident.alternativeSuppliers.map((s) => `${s.name.split(" ")[0]}: ${corr[s.id] ?? 0}`).join(" · ")}`,
+    actor: "AI",
+    tag: webTag,
+  });
   await pace(350);
 
-  // ── Document Intelligence (Nutrient lands in Phase 4) ────────────
-  yield push({ message: "6 supplier documents identified", actor: "AI", tag: "DEMO SEEDED" });
+  // ── Document Intelligence (Nutrient) ─────────────────────────────
+  yield push({ message: "Processing 6 supplier documents…", actor: "AI" });
+  await pace(400);
+
+  const docs = await runDocumentIntelligence();
+  mergeDocClaims(incident, docs);
+  const docTag = docs.liveCount > 0 ? "LIVE" : "LOCAL";
+  yield push({
+    message: `${docs.documents.length} documents processed (${docs.liveCount} via Nutrient · ${docs.documents.length - docs.liveCount} local extraction)`,
+    actor: "AI",
+    tag: docTag,
+  });
   await pace(350);
-  yield push({ message: "43 fields extracted · 12 material claims identified", actor: "AI", tag: "DEMO SEEDED" });
+  yield push({
+    message: `${docs.totalFields} fields extracted · ${docs.claims.length} material claims identified from documents`,
+    actor: "AI",
+    tag: docTag,
+  });
   await pace(350);
 
   const report = verifyClaims(incident);

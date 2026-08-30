@@ -1,0 +1,103 @@
+[
+  {
+    "id": "pacific-supply-agreement",
+    "name": "Pacific Components — Master Supply Agreement",
+    "type": "Contract",
+    "supplierId": null,
+    "lines": [
+      "MASTER SUPPLY AGREEMENT",
+      "DOC_TYPE: Master Supply Agreement",
+      "PARTIES: Meridian Manufacturing Co. / Pacific Components Ltd.",
+      "PRODUCT: PX-17 Power Controller",
+      "ANNUAL_VOLUME: 12000 units",
+      "UNIT_PRICE: 86.00 USD",
+      "LEAD_TIME: 6 weeks",
+      "TERMINATION_CLAUSE: 30-day notice",
+      "EFFECTIVE_DATE: 2024-02-01",
+      "EXPIRY: 2027-01-31"
+    ]
+  },
+  {
+    "id": "nexus-business-registration",
+    "name": "Nexus Manufacturing — Business Registration",
+    "type": "Business Registration",
+    "supplierId": "SUP-B",
+    "lines": [
+      "SOCIALIST REPUBLIC OF VIET NAM - BUSINESS REGISTRATION CERTIFICATE",
+      "DOC_TYPE: Business Registration",
+      "ENTITY: Nexus Manufacturing Co. Ltd",
+      "REGISTRY: MPI - Department of Planning and Investment",
+      "REG_NUMBER: 0107654321",
+      "FORMED: 2016-03-12",
+      "STATUS: Active",
+      "ADDRESS: Thang Long Industrial Park, Hanoi",
+      "AUTHORIZED_CAPITAL: VND 120B"
+    ]
+  },
+  {
+    "id": "nexus-product-spec",
+    "name": "Nexus NX-P17 — Product Specification",
+    "type": "Product Specification",
+    "supplierId": "SUP-B",
+    "lines": [
+      "NX-P17 POWER CONTROLLER - TECHNICAL DATASHEET",
+      "DOC_TYPE: Product Specification",
+      "MODEL: NX-P17",
+      "EQUIVALENT_TO: PX-17 Power Controller",
+      "INPUT_VOLTAGE: 24V DC",
+      "OUTPUT_CHANNELS: 4",
+      "OPERATING_TEMP: -40 to 85 C",
+      "MTBF: 120000 h",
+      "COMPLIANCE: CE, RoHS",
+      "DATASHEET_REV: 2025-11"
+    ]
+  },
+  {
+    "id": "apex-iso-9001-certificate",
+    "name": "Apex Electronics — ISO 9001:2015 Certificate",
+    "type": "Certification",
+    "supplierId": "SUP-A",
+    "lines": [
+      "CERTIFICATE OF REGISTRATION",
+      "DOC_TYPE: ISO 9001:2015 Certificate",
+      "HOLDER: Apex Electronics GmbH",
+      "CERT_NUMBER: TUV-88231",
+      "ISSUER: TUV Rheinland",
+      "ISSUED: 2024-03-15",
+      "VALID_UNTIL: 2027-03-14",
+      "SCOPE: Manufacture of industrial power controllers"
+    ]
+  },
+  {
+    "id": "shenzhen-iso-9001-certificate",
+    "name": "Shenzhen Rapid Parts — ISO 9001 Certificate (copy)",
+    "type": "Certification",
+    "supplierId": "SUP-C",
+    "lines": [
+      "QUALITY MANAGEMENT SYSTEM CERTIFICATE - UNCONTROLLED COPY",
+      "DOC_TYPE: ISO 9001 Certificate (copy)",
+      "HOLDER: Shenzhen Rapid Parts Ltd",
+      "CERT_NUMBER: SR-2024-114",
+      "ISSUER: Unaccredited certification body",
+      "ISSUED: 2024-11-01",
+      "VALID_UNTIL: 2027-10-31",
+      "REGISTRY_MATCH: NOT FOUND"
+    ]
+  },
+  {
+    "id": "shenzhen-business-registration",
+    "name": "Shenzhen Rapid Parts — Business Registration",
+    "type": "Business Registration",
+    "supplierId": "SUP-C",
+    "lines": [
+      "PEOPLES REPUBLIC OF CHINA - BUSINESS LICENSE",
+      "DOC_TYPE: Business Registration",
+      "ENTITY: Shenzhen Rapid Parts Ltd",
+      "REGISTRY: Shenzhen AMR",
+      "REG_NUMBER: 91440300MA5H2X",
+      "FORMED: 2021-06-08",
+      "STATUS: Active",
+      "ABOUT_PAGE_CLAIM: Established 2018"
+    ]
+  }
+]

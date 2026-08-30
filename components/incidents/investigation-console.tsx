@@ -76,7 +76,11 @@ export function InvestigationConsole({ incident }: { incident: Incident }) {
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
                 <span className="flex-1">
                   {s.message}
-                  {s.tag === "DEMO SEEDED" && <Badge variant="muted" className="ml-2">DEMO SEEDED</Badge>}
+                  {s.tag && (
+                    <Badge variant={s.tag === "LIVE" ? "success" : "muted"} className="ml-2">
+                      {s.tag}
+                    </Badge>
+                  )}
                 </span>
                 <span className="font-mono text-xs text-muted-foreground">{formatTime(s.time)}</span>
               </li>

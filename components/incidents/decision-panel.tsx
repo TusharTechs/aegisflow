@@ -1,12 +1,16 @@
-import { UserCheck } from "lucide-react";
+import { ExternalLink, FileSignature, UserCheck } from "lucide-react";
 import { Incident } from "@/schemas/core";
 import { RankedSupplier } from "@/lib/suppliers/ranking";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { approve, reject, requestEvidence } from "@/lib/orchestration/actions";
+import { approve, prepareDocuments, reject, requestEvidence, signAgreement } from "@/lib/orchestration/actions";
+
+const inputCls = "h-9 w-full rounded-md border bg-transparent px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 export function DecisionPanel({ incident, recommendation }: { incident: Incident; recommendation: RankedSupplier | null }) {
+  const doc = incident.generatedDocument;
+
   return (
     <Card>
       <CardHeader>
@@ -63,11 +67,58 @@ export function DecisionPanel({ incident, recommendation }: { incident: Incident
                 </form>
               </div>
             )}
-            {incident.state === "APPROVED" && <Badge variant="success">Approved — preparing documents</Badge>}
-            {incident.state === "REJECTED" && <Badge variant="critical">Recommendation rejected</Badge>}
-            {["DOCUMENT_PREPARED", "SIGNATURE_REQUIRED", "SIGNED"].includes(incident.state) && (
-              <Badge variant="info">{incident.state.replace(/_/g, " ")}</Badge>
+
+            {incident.state === "APPROVED" && (
+              <form action={prepareDocuments.bind(null, incident.id)}>
+                <Button className="w-full">Prepare transition package</Button>
+              </form>
             )}
+
+            {(incident.state === "DOCUMENT_PREPARED" || incident.state === "SIGNATURE_REQUIRED") && doc && (
+              <div className="space-y-3 rounded-md border p-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold">{doc.title}</span>
+                  <Badge variant={doc.mode === "LIVE" ? "success" : "muted"}>
+                    {doc.mode === "LIVE" ? "DOCTAVIAN" : "LOCAL RENDER"}
+                  </Badge>
+                </div>
+                <a href={doc.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                  View agreement <ExternalLink className="h-3 w-3" />
+                </a>
+
+                {incident.state === "SIGNATURE_REQUIRED" && (
+                  <form action={signAgreement.bind(null, incident.id)} className="space-y-2 pt-2">
+                    <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-foreground">
+                      <p className="font-semibold">HUMAN ACTION REQUIRED</p>
+                      <p className="mt-1 text-muted-foreground">
+                        AegisFlow prepared this agreement. Only an authorized human can sign it. Signing is irreversible.
+                      </p>
+                    </div>
+                    <input name="signerName" required placeholder="Full name" className={inputCls} />
+                    <input name="signerTitle" required placeholder="Title (e.g. VP Procurement)" className={inputCls} />
+                    <label className="flex items-start gap-2 text-xs text-muted-foreground">
+                      <input type="checkbox" name="authorized" required className="mt-0.5 h-4 w-4" />
+                      I am authorized to bind {doc.payload.buyer} and understand this signature is irreversible.
+                    </label>
+                    <Button className="w-full" type="submit">
+                      <FileSignature className="h-4 w-4" /> Sign agreement
+                    </Button>
+                  </form>
+                )}
+              </div>
+            )}
+
+            {incident.state === "SIGNED" && incident.signature && (
+              <div className="rounded-md border border-success/40 bg-success/10 p-4 text-sm">
+                <p className="font-semibold text-success">Signed</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {incident.signature.signerName} ({incident.signature.signerTitle}) · {incident.signature.signedAt.slice(0, 10)}
+                  {incident.signature.foxitSessionId ? ` · Foxit session ${incident.signature.foxitSessionId}` : " · In-app ceremony"}
+                </p>
+              </div>
+            )}
+
+            {incident.state === "REJECTED" && <Badge variant="critical">Recommendation rejected</Badge>}
           </>
         )}
       </CardContent>

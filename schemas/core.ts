@@ -27,7 +27,12 @@ export const ClaimSchema = z.object({
   timestamp: z.string(),
   confidence: z.number().min(0).max(100),
   status: EvidenceStatus,
-  conflictReason: z.string().optional()
+  conflictReason: z.string().optional(),
+  documentEvidence: z.object({
+    documentId: z.string(),
+    field: z.string(),
+    mode: z.enum(["LIVE", "LOCAL"]),
+  }).optional(),
 });
 
 export const SupplierSchema = z.object({
@@ -41,6 +46,58 @@ export const SupplierSchema = z.object({
   recommendation: z.boolean().optional(),
   recommendationReasoning: z.string().optional()
 });
+
+export const ProcessedDocumentSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  type: z.string(),
+  supplierId: z.string().optional(),
+  fieldCount: z.number(),
+  mode: z.enum(["LIVE", "LOCAL"]),
+  url: z.string(),
+});
+export type ProcessedDocument = z.infer<typeof ProcessedDocumentSchema>;
+
+export const ContractPayloadSchema = z.object({
+  agreementId: z.string(),
+  buyer: z.string(),
+  supplier: z.string(),
+  product: z.string(),
+  quantity: z.number(),
+  unitPrice: z.number(),
+  totalValue: z.number(),
+  deliveryDeadlineDays: z.number(),
+  sla: z.string(),
+  compliance: z.array(z.string()),
+  effectiveDate: z.string(),
+  riskConditions: z.array(z.string()),
+  contingency: z.string(),
+  evidenceSummary: z.object({
+    verified: z.number(),
+    conflicts: z.number(),
+    confidence: z.number(),
+  }),
+});
+export type ContractPayload = z.infer<typeof ContractPayloadSchema>;
+
+export const GeneratedDocumentSchema = z.object({
+  id: z.string(),
+  kind: z.enum(["EMERGENCY_TRANSITION_AGREEMENT"]),
+  title: z.string(),
+  mode: z.enum(["LIVE", "LOCAL"]),
+  url: z.string(),
+  generatedAt: z.string(),
+  payload: ContractPayloadSchema,
+});
+export type GeneratedDocument = z.infer<typeof GeneratedDocumentSchema>;
+
+export const SignatureRecordSchema = z.object({
+  signerName: z.string(),
+  signerTitle: z.string(),
+  signedAt: z.string(),
+  foxitSessionId: z.string().optional(),
+});
+export type SignatureRecord = z.infer<typeof SignatureRecordSchema>;
 
 export const ExternalSourceSchema = z.object({
   id: z.string(),
@@ -78,7 +135,10 @@ export const IncidentSchema = z.object({
     timestamp: z.string(),
     event: z.string(),
     actor: z.enum(["SYSTEM", "AI", "HUMAN"])
-  }))
+  })),
+  documentsProcessed: z.array(ProcessedDocumentSchema).optional(),
+  generatedDocument: GeneratedDocumentSchema.optional(),
+  signature: SignatureRecordSchema.optional(),
 });
 
 export type WorkflowStateType = z.infer<typeof WorkflowState>;

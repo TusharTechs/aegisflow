@@ -1,10 +1,8 @@
 import { notFound } from "next/navigation";
-import { FileText } from "lucide-react";
 import { getIncident } from "@/lib/incidents/repository";
 import { rankSuppliers } from "@/lib/suppliers/ranking";
 import { corroborationBySupplier } from "@/lib/agents/verification";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BusinessImpact } from "@/components/incidents/business-impact";
 import { InvestigationConsole } from "@/components/incidents/investigation-console";
 import { EvidenceSummary } from "@/components/incidents/evidence-summary";
@@ -12,6 +10,7 @@ import { SupplierComparison } from "@/components/incidents/supplier-comparison";
 import { DecisionPanel } from "@/components/incidents/decision-panel";
 import { AuditTrail } from "@/components/incidents/audit-trail";
 import { ExternalSources } from "@/components/evidence/external-sources";
+import { ProcessedDocuments } from "@/components/documents/processed-documents";
 
 type Props = { params: Promise<{ id: string }> | { id: string } };
 
@@ -47,15 +46,7 @@ export default async function IncidentPage({ params }: Props) {
           <EvidenceSummary incident={incident} />
           <ExternalSources incident={incident} />
           <SupplierComparison ranked={ranked} showScores={investigated} externalCounts={externalCounts} />
-          <Card>
-            <CardHeader><CardTitle className="text-base">Documents</CardTitle></CardHeader>
-            <CardContent className="flex items-center gap-2 text-sm text-muted-foreground">
-              <FileText className="h-4 w-4" />
-              {["DOCUMENT_PREPARED", "SIGNATURE_REQUIRED", "SIGNED"].includes(incident.state)
-                ? "Emergency transition agreement generated."
-                : "The emergency transition agreement will be generated after human approval."}
-            </CardContent>
-          </Card>
+          <ProcessedDocuments incident={incident} />
         </div>
 
         <div className="space-y-6">

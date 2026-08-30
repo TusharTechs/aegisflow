@@ -19,7 +19,8 @@ const NAV = [
   { href: "/audit", label: "Audit Log", icon: ScrollText },
 ];
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ children, persistence }: { children: React.ReactNode; persistence?: "XANO" | "LOCAL" }) {
+
   const pathname = usePathname();
 
   return (
@@ -52,7 +53,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
         <div className="border-t p-4 text-xs text-muted-foreground">
           AI prepares. <span className="font-medium text-foreground">Humans authorize.</span>
+        <div className="mt-1">
+          Persistence: <span className="font-medium text-foreground">{persistence ?? "LOCAL"}</span>
         </div>
+      </div>
       </aside>
 
       <div className="pl-60">

@@ -16,9 +16,9 @@ type Props = { params: Promise<{ id: string }> | { id: string } };
 
 export default async function IncidentPage({ params }: Props) {
   const { id } = await params;
-  const incident = getIncident(id);
+  const incident = await getIncident(id);
   if (!incident) notFound();
-
+  
   const ranked = rankSuppliers(incident.alternativeSuppliers);
   const externalCounts = corroborationBySupplier(incident);
   const investigated = incident.state !== "INVESTIGATING";

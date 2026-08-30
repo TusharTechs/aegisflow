@@ -1,8 +1,8 @@
 import { listIncidents } from "@/lib/incidents/repository";
 import { IncidentCard } from "@/components/dashboard/incident-card";
 
-export default function DashboardPage() {
-  const incidents = listIncidents();
+export default async function DashboardPage() {
+  const incidents = await listIncidents();
   return (
     <div className="max-w-6xl space-y-6">
       <div>

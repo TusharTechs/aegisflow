@@ -7,36 +7,32 @@ import { buildContractPayload } from "@/lib/documents/contract";
 import { generateViaDoctavian, isDoctavianConfigured } from "@/integrations/doctavian/client";
 import { createFoxitSigningSession, isFoxitConfigured } from "@/integrations/foxit/client";
 
-export async function runResponse(id: string) {
-  // Superseded by the streaming route in Phase 2; kept as a no-op guard.
-}
-
 export async function approve(id: string) {
   try {
-    const incident = getIncident(id);
+    const incident = await getIncident(id);
     if (!incident) return;
     const recommended = incident.alternativeSuppliers.find((s) => s.recommendation)?.name ?? "recommended supplier";
-    transitionIncident(id, "APPROVED", "HUMAN", `Human approved transition to ${recommended}`);
+    await transitionIncident(id, "APPROVED", "HUMAN", `Human approved transition to ${recommended}`);
     revalidatePath(`/incidents/${id}`);
   } catch {}
 }
 
 export async function requestEvidence(id: string) {
   try {
-    transitionIncident(id, "INVESTIGATING", "HUMAN", "Human requested additional evidence");
+    await transitionIncident(id, "INVESTIGATING", "HUMAN", "Human requested additional evidence");
     revalidatePath(`/incidents/${id}`);
   } catch {}
 }
 
 export async function reject(id: string) {
   try {
-    transitionIncident(id, "REJECTED", "HUMAN", "Human rejected the recommendation");
+    await transitionIncident(id, "REJECTED", "HUMAN", "Human rejected the recommendation");
     revalidatePath(`/incidents/${id}`);
   } catch {}
 }
 
 export async function prepareDocuments(id: string) {
-  const incident = getIncident(id);
+  const incident = await getIncident(id);
   if (!incident || incident.state !== "APPROVED") return;
 
   const ranked = rankSuppliers(incident.alternativeSuppliers);
@@ -51,7 +47,7 @@ export async function prepareDocuments(id: string) {
       url = result.url;
       mode = "LIVE";
     } catch {
-      mode = "LOCAL"; // graceful fallback; never fabricate
+      mode = "LOCAL";
     }
   }
 
@@ -65,14 +61,14 @@ export async function prepareDocuments(id: string) {
     payload,
   };
 
-  appendAudit(id, `Agreement generated (${mode === "LIVE" ? "Doctavian" : "local render"})`, "AI");
-  transitionIncident(id, "DOCUMENT_PREPARED", "SYSTEM");
-  transitionIncident(id, "SIGNATURE_REQUIRED", "SYSTEM", "Signature requested — human authorization required");
+  await appendAudit(id, `Agreement generated (${mode === "LIVE" ? "Doctavian" : "local render"})`, "AI");
+  await transitionIncident(id, "DOCUMENT_PREPARED", "SYSTEM");
+  await transitionIncident(id, "SIGNATURE_REQUIRED", "SYSTEM", "Signature requested — human authorization required");
   revalidatePath(`/incidents/${id}`);
 }
 
 export async function signAgreement(id: string, formData: FormData) {
-  const incident = getIncident(id);
+  const incident = await getIncident(id);
   if (!incident || incident.state !== "SIGNATURE_REQUIRED") return;
 
   const signerName = String(formData.get("signerName") ?? "").trim();
@@ -88,14 +84,14 @@ export async function signAgreement(id: string, formData: FormData) {
         signerName,
       });
       foxitSessionId = session.sessionId;
-      appendAudit(id, `Foxit eSign session created (${foxitSessionId})`, "SYSTEM");
+      await appendAudit(id, `Foxit eSign session created (${foxitSessionId})`, "SYSTEM");
     } catch {
-      foxitSessionId = undefined; // in-app ceremony remains the boundary
+      foxitSessionId = undefined;
     }
   }
 
   incident.signature = { signerName, signerTitle, signedAt: new Date().toISOString(), foxitSessionId };
-  transitionIncident(
+  await transitionIncident(
     id,
     "SIGNED",
     "HUMAN",

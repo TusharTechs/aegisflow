@@ -7,7 +7,7 @@ type Props = { params: Promise<{ id: string }> | { id: string } };
 
 export default async function AgreementPage({ params }: Props) {
   const { id } = await params;
-  const incident = getIncident(id);
+  const incident = await getIncident(id);
   const doc = incident?.generatedDocument;
   if (!incident || !doc) notFound();
   const p = doc.payload;

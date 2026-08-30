@@ -1,6 +1,7 @@
 import { appendAudit, getIncident, transitionIncident } from "@/lib/incidents/repository";
 import { analyzeIncident } from "@/lib/agents/incident-analyst";
-import { verifyClaims } from "@/lib/agents/verification";
+import { runWebIntelligence } from "@/lib/agents/web-intelligence";
+import { verifyClaims, corroborationBySupplier } from "@/lib/agents/verification";
 import { explainDecision } from "@/lib/agents/decision";
 import { rankSuppliers } from "@/lib/suppliers/ranking";
 
@@ -28,16 +29,32 @@ export async function* runInvestigation(id: string): AsyncGenerator<Investigatio
   yield push({ message: `Analyst: ${analyst.summary}`, actor: "AI" });
   await pace(300);
 
-  // Document Intelligence — Nutrient integration lands in Phase 4
+  // ── Web Intelligence (SerpApi, live when configured) ─────────────
+  const planned = (await import("@/lib/agents/web-intelligence")).buildQueries(incident);
+  yield push({ message: `Searching live web sources… (${planned.length} queries)`, actor: "AI" });
+  await pace(400);
+
+  const web = await runWebIntelligence(incident);
+  incident.externalSources = web.sources;
+  const webTag = web.liveCount > 0 ? "LIVE" : "DEMO SEEDED";
+  yield push({
+    message: `${web.sources.length} relevant external sources found (${web.liveCount} live · ${web.seededCount} seeded)`,
+    actor: "AI",
+    tag: webTag,
+  });
+  await pace(350);
+
+  const corr = corroborationBySupplier(incident);
+  const corrSummary = incident.alternativeSuppliers
+    .map((s) => `${s.name.split(" ")[0]}: ${corr[s.id] ?? 0}`)
+    .join(" · ");
+  yield push({ message: `External corroboration — ${corrSummary}`, actor: "AI", tag: webTag });
+  await pace(350);
+
+  // ── Document Intelligence (Nutrient lands in Phase 4) ────────────
   yield push({ message: "6 supplier documents identified", actor: "AI", tag: "DEMO SEEDED" });
   await pace(350);
   yield push({ message: "43 fields extracted · 12 material claims identified", actor: "AI", tag: "DEMO SEEDED" });
-  await pace(350);
-
-  // Web Intelligence — SerpApi integration lands in Phase 3
-  yield push({ message: "Searching live web sources…", actor: "AI", tag: "DEMO SEEDED" });
-  await pace(600);
-  yield push({ message: "17 relevant external sources found", actor: "AI", tag: "DEMO SEEDED" });
   await pace(350);
 
   const report = verifyClaims(incident);

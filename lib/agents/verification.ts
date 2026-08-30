@@ -23,3 +23,13 @@ export function verifyClaims(incident: Incident): VerificationReport {
   }
   return report;
 }
+
+export function corroborationBySupplier(incident: Incident): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const source of incident.externalSources ?? []) {
+    if (source.supplierId && source.relevance >= 60) {
+      counts[source.supplierId] = (counts[source.supplierId] ?? 0) + 1;
+    }
+  }
+  return counts;
+}

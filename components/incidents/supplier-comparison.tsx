@@ -3,7 +3,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-export function SupplierComparison({ ranked, showScores }: { ranked: RankedSupplier[]; showScores: boolean }) {
+export function SupplierComparison({
+  ranked,
+  showScores,
+  externalCounts,
+}: {
+  ranked: RankedSupplier[];
+  showScores: boolean;
+  externalCounts?: Record<string, number>;
+}) {
   return (
     <Card>
       <CardHeader><CardTitle className="text-base">Alternative suppliers</CardTitle></CardHeader>
@@ -16,6 +24,7 @@ export function SupplierComparison({ ranked, showScores }: { ranked: RankedSuppl
               <th className="pb-2 font-medium">Lead time</th>
               <th className="pb-2 font-medium">Cost</th>
               <th className="pb-2 font-medium">Evidence</th>
+              {showScores && <th className="pb-2 font-medium">External</th>}
               {showScores && <th className="pb-2 text-right font-medium">Score</th>}
             </tr>
           </thead>
@@ -34,13 +43,18 @@ export function SupplierComparison({ ranked, showScores }: { ranked: RankedSuppl
                 <td className="py-3">{r.supplier.leadTimeDays} days</td>
                 <td className="py-3">{r.supplier.costMultiplier.toFixed(2)}×</td>
                 <td className="py-3 text-muted-foreground">{r.verified}/{r.supplier.claims.length} verified</td>
+                {showScores && (
+                  <td className="py-3 text-muted-foreground">{externalCounts?.[r.supplier.id] ?? 0} sources</td>
+                )}
                 {showScores && <td className="py-3 text-right font-semibold">{r.score}</td>}
               </tr>
             ))}
           </tbody>
         </table>
         {!showScores && (
-          <p className="mt-3 text-xs text-muted-foreground">Scores and recommendation appear after the response run completes.</p>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Scores and recommendation appear after the response run completes.
+          </p>
         )}
       </CardContent>
     </Card>

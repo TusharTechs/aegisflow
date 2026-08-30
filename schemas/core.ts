@@ -42,6 +42,20 @@ export const SupplierSchema = z.object({
   recommendationReasoning: z.string().optional()
 });
 
+export const ExternalSourceSchema = z.object({
+  id: z.string(),
+  query: z.string(),
+  supplierId: z.string().optional(),
+  title: z.string(),
+  url: z.string(),
+  snippet: z.string(),
+  engine: z.string(),
+  observedAt: z.string(),
+  mode: z.enum(["LIVE", "DEMO SEEDED"]),
+  relevance: z.number().min(0).max(100),
+});
+export type ExternalSource = z.infer<typeof ExternalSourceSchema>;
+
 export const IncidentSchema = z.object({
   id: z.string(),
   supplier: z.string(),
@@ -59,6 +73,7 @@ export const IncidentSchema = z.object({
     unknowns: z.array(z.string()),
     source: z.enum(["gemini", "fallback"]),
   }).optional(),
+  externalSources: z.array(ExternalSourceSchema).optional(),
   auditLog: z.array(z.object({
     timestamp: z.string(),
     event: z.string(),

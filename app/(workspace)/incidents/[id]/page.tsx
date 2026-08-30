@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { FileText } from "lucide-react";
 import { getIncident } from "@/lib/incidents/repository";
 import { rankSuppliers } from "@/lib/suppliers/ranking";
+import { corroborationBySupplier } from "@/lib/agents/verification";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BusinessImpact } from "@/components/incidents/business-impact";
@@ -10,6 +11,7 @@ import { EvidenceSummary } from "@/components/incidents/evidence-summary";
 import { SupplierComparison } from "@/components/incidents/supplier-comparison";
 import { DecisionPanel } from "@/components/incidents/decision-panel";
 import { AuditTrail } from "@/components/incidents/audit-trail";
+import { ExternalSources } from "@/components/evidence/external-sources";
 
 type Props = { params: Promise<{ id: string }> | { id: string } };
 
@@ -19,6 +21,7 @@ export default async function IncidentPage({ params }: Props) {
   if (!incident) notFound();
 
   const ranked = rankSuppliers(incident.alternativeSuppliers);
+  const externalCounts = corroborationBySupplier(incident);
   const investigated = incident.state !== "INVESTIGATING";
   const recommendation = investigated ? ranked[0] : null;
 
@@ -42,7 +45,8 @@ export default async function IncidentPage({ params }: Props) {
           <BusinessImpact incident={incident} />
           <InvestigationConsole incident={incident} />
           <EvidenceSummary incident={incident} />
-          <SupplierComparison ranked={ranked} showScores={investigated} />
+          <ExternalSources incident={incident} />
+          <SupplierComparison ranked={ranked} showScores={investigated} externalCounts={externalCounts} />
           <Card>
             <CardHeader><CardTitle className="text-base">Documents</CardTitle></CardHeader>
             <CardContent className="flex items-center gap-2 text-sm text-muted-foreground">

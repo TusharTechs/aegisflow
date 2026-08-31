@@ -109,10 +109,14 @@ export async function runDocumentIntelligence(ledger?: ActivityLedger): Promise<
 
     ledger?.record({
       sponsor: "Nutrient",
-      operation: `extract-text · ${doc.type}`,
+      operation: `/build json-content · ${doc.type}`,
       method: "POST",
       endpoint: NUTRIENT_EXTRACT_ENDPOINT,
-      request: { file: `${doc.id}.pdf`, supplier: doc.supplierId ?? "n/a", operation: "extract-text" },
+      request: {
+        file: `${doc.id}.pdf`,
+        supplier: doc.supplierId ?? "n/a",
+        instructions: { parts: [{ file: "document" }], output: { type: "json-content", plainText: true, tables: true } },
+      },
       response: { mode, field_count: Object.keys(fields).length, fields },
       mode: mode === "LIVE" ? "LIVE" : "LOCAL",
       status: mode === "LIVE" ? "ok" : liveError ? "error" : "fallback",

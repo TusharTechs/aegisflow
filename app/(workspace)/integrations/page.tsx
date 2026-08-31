@@ -44,6 +44,7 @@ export default async function IntegrationsPage() {
             <tbody>
               {SPONSOR_META.map((m) => {
                 const cfg = CONFIG.find((c) => c.name === m.name);
+                const xanoDegraded = m.name === "Xano" && Boolean(process.env.XANO_API_BASE) && persistenceMode() !== "XANO";
                 const configured = m.name === "Xano" ? persistenceMode() === "XANO" : cfg?.configured;
                 return (
                   <tr key={m.name} className="border-b last:border-0 align-top">
@@ -51,8 +52,12 @@ export default async function IntegrationsPage() {
                     <td className="py-3 text-muted-foreground">{m.challenge}</td>
                     <td className="py-3 font-mono text-xs text-muted-foreground">{cfg?.env}</td>
                     <td className="py-3 text-right">
-                      <Badge variant={configured ? "success" : "muted"}>
-                        {configured ? "LIVE — key set" : "FALLBACK — no key"}
+                      <Badge variant={configured ? "success" : xanoDegraded ? "warning" : "muted"}>
+                        {configured
+                          ? "LIVE — key set"
+                          : xanoDegraded
+                            ? "CONFIGURED — fell back this run"
+                            : "FALLBACK — no key"}
                       </Badge>
                     </td>
                   </tr>

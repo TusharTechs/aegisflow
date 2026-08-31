@@ -1,4 +1,5 @@
-import { appendAudit, getIncident, persistenceMode, saveIncident, transitionIncident } from "@/lib/incidents/repository";
+import { appendAudit, getIncident, persistenceMode, persistenceNote, saveIncident, transitionIncident } from "@/lib/incidents/repository";
+import { isXanoConfigured } from "@/integrations/xano/client";
 import { analyzeIncident } from "@/lib/agents/incident-analyst";
 import { runWebIntelligence, buildQueries } from "@/lib/agents/web-intelligence";
 import { runDocumentIntelligence, mergeDocClaims } from "@/lib/agents/document-intelligence";
@@ -106,12 +107,14 @@ export async function* runInvestigation(id: string): AsyncGenerator<Investigatio
   const persistStart = Date.now();
   incident.apiActivity = ledger.all();
   await saveIncident(incident);
+  const xanoConfigured = isXanoConfigured();
   const xanoLive = persistenceMode() === "XANO";
+  const xanoDegraded = persistenceNote();
   ledger.record({
     sponsor: "Xano",
     operation: "persist incident + suppliers + claims + audit",
-    method: xanoLive ? "PATCH/POST" : "n/a",
-    endpoint: xanoLive ? `${process.env.XANO_API_BASE ?? ""}/incident,/supplier,/claim,/audit_event` : "in-memory store",
+    method: xanoConfigured ? "PATCH/POST" : "n/a",
+    endpoint: xanoConfigured ? `${process.env.XANO_API_BASE ?? ""}/{incident,supplier,claim,audit_event}` : "in-memory store",
     request: {
       incident_key: incident.id,
       state: incident.state,
@@ -124,8 +127,10 @@ export async function* runInvestigation(id: string): AsyncGenerator<Investigatio
     status: xanoLive ? "ok" : "fallback",
     ms: Date.now() - persistStart,
     note: xanoLive
-      ? "Normalized rows upserted to Xano; audit_event stream is append-only."
-      : "XANO_API_BASE not configured — normalized rows held in the in-memory system of record. Set Xano env to persist.",
+      ? "Normalized rows written to Xano; audit_event stream is append-only."
+      : xanoDegraded
+        ? `Xano configured but unreachable this run (${xanoDegraded}) — mirrored to the in-memory system of record. Free-tier rate limits are common; retry or check the table schema.`
+        : "XANO_API_BASE not configured — normalized rows held in the in-memory system of record. Set Xano env to persist.",
   });
   incident.apiActivity = ledger.all();
   await saveIncident(incident);

@@ -63,6 +63,7 @@ class ResilientRepository implements IAegisRepository {
   private xano = new XanoRepository();
   private local = new InMemoryRepository();
   private degraded = false;
+  private hydrated = new Set<string>();
   degradedReason?: string;
 
   get mode(): "LOCAL" | "XANO" {
@@ -72,6 +73,7 @@ class ResilientRepository implements IAegisRepository {
   reset(): void {
     this.degraded = false;
     this.degradedReason = undefined;
+    this.hydrated.clear();
     this.local.reset();
   }
 
@@ -94,9 +96,12 @@ class ResilientRepository implements IAegisRepository {
   }
 
   async getIncident(id: string): Promise<Incident | undefined> {
-    if (!this.degraded) {
+    // Read Xano once per incident, then serve from the mirror — the free tier is
+    // rate-limited and every page render would otherwise hit it.
+    if (!this.degraded && !this.hydrated.has(id)) {
       try {
         const fromXano = await this.xano.getIncident(id);
+        this.hydrated.add(id);
         if (fromXano) {
           await this.local.saveIncident(structuredClone(fromXano));
           return fromXano;

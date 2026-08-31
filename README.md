@@ -105,11 +105,11 @@ that exercise the same graceful fallbacks as real outages.
 | Service | Free? | Get a key |
 |---|---|---|
 | SerpApi | Yes — 250 searches/mo, no card | serpapi.com → dashboard |
-| Nutrient DWS | Yes — free plan, no card | dashboard.nutrient.io (Processor API key) |
+| Nutrient DWS | Yes — 50 credits (~3/extraction); email douglas@nutrient.io for a hackathon top-up | dashboard.nutrient.io → **Processor API** key |
 | Foxit eSign | Yes — no card | [app.developer-api.foxit.com](https://app.developer-api.foxit.com) → the **same** client_id + client_secret used for PDF Services also work for eSign |
-| Xano | Yes — free plan (100k records) | xano.com → see `docs/xano-setup.md` |
+| Xano | Yes — free (10 req/20s limit) | xano.com → see `docs/xano-setup.md` (4 tables + `node scripts/seed-xano.mjs`) |
 | Doctavian | Request access | doctavian.com / hello@doctavian.com |
-| Gemini | Yes — free tier | aistudio.google.com/apikey |
+| Gemini | Yes — free tier | aistudio.google.com/apikey · uses `GEMINI_MODEL` (default `gemini-flash-latest`) |
 
 ## Deploy (Vercel)
 

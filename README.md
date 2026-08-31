@@ -47,6 +47,11 @@ treat the claim as verified.
  │    All LLM output is Zod-validated. The LLM interprets; it never invents facts.
  │
  ├─ State machine (lib/state) — human-in-the-loop enforcement
+ │    HUMAN_ONLY_TARGETS = APPROVED · REJECTED · SIGNED  (enforced in transitionIncident)
+ │    assertHumanMaySign(actor, state) guards every eSign path
+ │
+ ├─ Integration Activity Ledger (lib/integrations/ledger) — /integrations page
+ │    every sponsor API call recorded with real request/response + LIVE/LOCAL/DEMO tag
  │
  ├─ Repository interface (lib/incidents)
  │    ├─ InMemoryRepository  (LOCAL demo mode)
@@ -60,14 +65,15 @@ treat the claim as verified.
 
 | Integration | Role in the workflow | Without key |
 |---|---|---|
-| **SerpApi** | Live web intelligence: market context, disruption news, supplier corroboration. Absence of evidence is treated as evidence. | Per-query seeded sources, tagged `DEMO SEEDED` |
-| **Nutrient** | PDF text extraction; claims are derived from extracted document fields. | Local extraction over the same PDFs, tagged `LOCAL` |
-| **Doctavian** | Generates the Emergency Supplier Transition Agreement from the structured decision payload. | Local render of the same payload, tagged `LOCAL RENDER` |
-| **Foxit** | eSign session creation at the signing boundary. | In-app human ceremony; the human is always the source of authorization |
-| **Xano** | System of record: normalized incident→supplier→claim tables + append-only audit events. | In-memory store, footer shows `Persistence: LOCAL` |
+| **SerpApi** | Live web search used for **verification**, one query per supplier + market/news. A live call returning **zero** results is a first-class signal — recorded and fed to the risk model as absence of corroboration. | Per-query seeded sources, tagged `DEMO SEEDED` |
+| **Nutrient** | **Both ends:** `extract-text` pulls the fields every claim's provenance points to on ingestion; `build` stamps the agreement **PENDING HUMAN SIGNATURE** on output. | Local PDF extraction + on-page banner, tagged `LOCAL` |
+| **Doctavian** | Generates the Emergency Supplier Transition Agreement from the structured, Zod-validated decision payload (decision → payload → document is visible in the UI). | Local render of the same payload, tagged `LOCAL RENDER` |
+| **Foxit** | eSign session created at the signing boundary — **only after `assertHumanMaySign` passes**. The agent can prepare the request; it cannot send it. | In-app human ceremony; the human is always the source of authorization |
+| **Xano** | System of record for the SaaS tool we rebuilt (the disruption war-room spreadsheet): normalized incident→supplier→claim tables + append-only audit events. | In-memory store, footer shows `Persistence: LOCAL` |
 | **Gemini** | Interpretation only (analyst summary, decision reasoning), Zod-validated. | Deterministic fallback, labeled as such |
 
-Nothing is ever faked: every data path is tagged `LIVE`, `LOCAL`, or `DEMO SEEDED` in the UI.
+Nothing is ever faked: every data path is tagged `LIVE`, `LOCAL`, or `DEMO SEEDED` in the UI,
+and every API call is on the record at `/integrations`.
 
 ## Risk model
 
@@ -94,19 +100,46 @@ npm test                         # vitest suite
 Demo controls (header): one-click **Reset demo** and **failure injection** toggles
 that exercise the same graceful fallbacks as real outages.
 
+### Where to get the (optional) sponsor keys
+
+| Service | Free? | Get a key |
+|---|---|---|
+| SerpApi | Yes — 250 searches/mo, no card | serpapi.com → dashboard |
+| Nutrient DWS | Yes — free plan, no card | dashboard.nutrient.io (Processor API key) |
+| Foxit eSign | Yes — free developer account, no card | developer-api.foxit.com |
+| Xano | Yes — free plan (100k records) | xano.com → see `docs/xano-setup.md` |
+| Doctavian | Request access | doctavian.com / hello@doctavian.com |
+| Gemini | Yes — free tier | aistudio.google.com/apikey |
+
+## Deploy (Vercel)
+
+The app is a standard Next.js 16 project with no build-time secrets — it deploys as-is.
+
+```bash
+npm i -g vercel
+vercel            # first run links the project
+vercel --prod     # ship it
+```
+
+The six evidence PDFs are committed under `public/docs/`, so no build step is needed.
+Add any sponsor keys as Vercel Environment Variables (all optional); with none set
+the deployed demo still runs the full workflow on local fallbacks. `next build` and
+the Vitest suite both pass green.
+
 ## Definition of done (verified)
 
 ✓ Incident created ✓ Disruption understood ✓ Documents processed ✓ Claims extracted
 ✓ Live web research ✓ External evidence collected ✓ Claims verified ✓ Contradiction
 detected ✓ Alternatives evaluated ✓ Risk calculated ✓ Recommendation produced
-✓ Recommendation explained ✓ Human approval ✓ Agreement generated ✓ Signing handoff
-✓ Audit trail recorded
+✓ Recommendation explained ✓ Human approval ✓ Agreement generated ✓ Agreement
+watermarked ✓ Signing handoff ✓ Audit trail recorded ✓ Every API call on the record
 
 ## Business model
 
 Procurement/operations SaaS: platform subscription + per-incident usage;
 enterprise tier with private backends (Xano) and SSO. Buyers: manufacturing,
 electronics, logistics, and any operation with single-source critical components.
+Full case — buyer, wedge, pricing, competition — at `/business` in the app.
 
 ## What we do not claim
 

@@ -96,7 +96,8 @@ export function ApiActivity({ calls }: { calls: ApiCall[] }) {
                   <span className="ml-2 text-xs text-muted-foreground">{meta.challenge}</span>
                 </div>
                 <span className="text-xs text-muted-foreground">
-                  {sponsorCalls.length} calls{sponsorLive > 0 && <span className="text-success"> · {sponsorLive} live</span>}
+                  {sponsorCalls.length} call{sponsorCalls.length !== 1 && "s"}
+                  {sponsorLive > 0 && <span className="text-success"> · {sponsorLive} live</span>}
                 </span>
               </div>
               <p className="text-xs leading-relaxed text-muted-foreground">{meta.role}</p>

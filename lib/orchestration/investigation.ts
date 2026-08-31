@@ -13,7 +13,8 @@ export interface InvestigationStep {
   tag?: "LIVE" | "DEMO SEEDED" | "LOCAL";
 }
 
-const pace = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const pace = (ms: number) =>
+  process.env.VITEST ? Promise.resolve() : new Promise((r) => setTimeout(r, ms));
 
 export async function* runInvestigation(id: string): AsyncGenerator<InvestigationStep> {
   const incident = await getIncident(id);

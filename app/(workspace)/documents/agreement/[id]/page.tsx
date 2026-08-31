@@ -12,6 +12,8 @@ export default async function AgreementPage({ params }: Props) {
   if (!incident || !doc) notFound();
   const p = doc.payload;
 
+  const signed = Boolean(incident.signature);
+
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div className="flex items-center justify-between">
@@ -21,7 +23,24 @@ export default async function AgreementPage({ params }: Props) {
         </Badge>
       </div>
 
-      <div className="space-y-6 rounded-lg border bg-card p-8 text-sm leading-relaxed">
+      {!signed && (
+        <div className="rounded-md border border-warning/40 bg-warning/10 px-4 py-2 text-xs font-medium text-foreground">
+          PENDING HUMAN SIGNATURE — NOT BINDING. Stamped by Nutrient DWS (or shown here as a banner when
+          Nutrient/Doctavian keys are absent). This document has no force until an authorized human signs it.
+        </div>
+      )}
+
+      <div className="relative space-y-6 overflow-hidden rounded-lg border bg-card p-8 text-sm leading-relaxed">
+        {!signed && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 flex items-center justify-center select-none"
+          >
+            <span className="rotate-[-30deg] text-4xl font-black uppercase tracking-widest text-destructive/10">
+              Pending Human Signature
+            </span>
+          </div>
+        )}
         <section>
           <h2 className="mb-2 font-semibold">1. Parties</h2>
           <p>

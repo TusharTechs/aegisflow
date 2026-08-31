@@ -25,7 +25,7 @@ export async function generateStructured<T>(opts: {
   ledger?: ActivityLedger;
   operation?: string;
 }): Promise<AiResult<T>> {
-  const modelName = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+  const modelName = process.env.GEMINI_MODEL || "gemini-flash-latest";
   const start = Date.now();
   const log = (source: "gemini" | "fallback", note: string, response: unknown) => {
     opts.ledger?.record({

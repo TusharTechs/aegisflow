@@ -49,20 +49,29 @@ export async function runWebIntelligence(incident: Incident, ledger?: ActivityLe
     ? "SerpApi failure injected via demo control — deterministic per-query seeded corroboration used."
     : "SERPAPI_API_KEY not configured — deterministic per-query seeded corroboration used. Set the key to run this query live.";
 
-  for (const p of planned) {
-    const req = { engine: "google", q: p.query, num: 4 };
-    const start = Date.now();
-    let liveResults: Awaited<ReturnType<typeof serpSearch>> | null = null;
-    let liveError: string | null = null;
+  // Queries run concurrently — 5 sequential SerpApi round-trips is the slowest part
+  // of the investigation. Results are merged back in planned order for stable ids.
+  const perQuery = await Promise.all(
+    planned.map(async (p) => {
+      const req = { engine: "google", q: p.query, num: 4 };
+      const start = Date.now();
+      let liveResults: Awaited<ReturnType<typeof serpSearch>> | null = null;
+      let liveError: string | null = null;
 
-    if (serpEnabled) {
-      try {
-        liveResults = await serpSearch(p.query, 4);
-      } catch (err) {
-        liveError = err instanceof Error ? err.message : "unknown error";
+      if (serpEnabled) {
+        try {
+          liveResults = await serpSearch(p.query, 4);
+        } catch (err) {
+          liveError = err instanceof Error ? err.message : "unknown error";
+        }
       }
-    }
 
+      const entry = { p, req, start, liveResults, liveError };
+      return entry;
+    })
+  );
+
+  for (const { p, req, start, liveResults, liveError } of perQuery) {
     if (liveResults) {
       liveResults.forEach((r, i) => {
         sources.push({

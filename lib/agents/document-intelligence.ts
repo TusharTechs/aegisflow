@@ -74,21 +74,30 @@ export async function runDocumentIntelligence(ledger?: ActivityLedger): Promise<
   const nutrientFailInjected = getDemoFlags().nutrient;
   const nutrientEnabled = isNutrientConfigured() && !nutrientFailInjected;
 
-  for (const doc of DOC_REGISTRY) {
-    const pdfPath = path.join(process.cwd(), "public", "docs", `${doc.id}.pdf`);
-    let text = "";
-    let mode: "LIVE" | "LOCAL" = "LOCAL";
-    const start = Date.now();
-    let liveError: string | null = null;
+  // Extract all six PDFs concurrently, then merge in registry order.
+  const perDoc = await Promise.all(
+    DOC_REGISTRY.map(async (doc) => {
+      const pdfPath = path.join(process.cwd(), "public", "docs", `${doc.id}.pdf`);
+      let text = "";
+      let mode: "LIVE" | "LOCAL" = "LOCAL";
+      const start = Date.now();
+      let liveError: string | null = null;
 
-    if (nutrientEnabled) {
-      try {
-        const bytes = await fs.readFile(pdfPath);
-        text = await extractTextViaNutrient(bytes, `${doc.id}.pdf`);
-        mode = "LIVE";
-        liveCount++;
-      } catch (err) {
-        liveError = err instanceof Error ? err.message : "unknown error";
+      if (nutrientEnabled) {
+        try {
+          const bytes = await fs.readFile(pdfPath);
+          text = await extractTextViaNutrient(bytes, `${doc.id}.pdf`);
+          mode = "LIVE";
+        } catch (err) {
+          liveError = err instanceof Error ? err.message : "unknown error";
+          try {
+            text = await extractTextLocal(pdfPath);
+          } catch {
+            text = "";
+          }
+          mode = "LOCAL";
+        }
+      } else {
         try {
           text = await extractTextLocal(pdfPath);
         } catch {
@@ -96,15 +105,12 @@ export async function runDocumentIntelligence(ledger?: ActivityLedger): Promise<
         }
         mode = "LOCAL";
       }
-    } else {
-      try {
-        text = await extractTextLocal(pdfPath);
-      } catch {
-        text = "";
-      }
-      mode = "LOCAL";
-    }
+      return { doc, text, mode, start, liveError };
+    })
+  );
 
+  for (const { doc, text, mode, start, liveError } of perDoc) {
+    if (mode === "LIVE") liveCount++;
     const fields = parseFields(text);
 
     ledger?.record({

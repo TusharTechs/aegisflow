@@ -67,12 +67,22 @@ function deriveClaims(docId: string, f: Record<string, string>, mode: "LIVE" | "
   }
 }
 
+// Nutrient DWS free tier is 50 credits total (~3 per extraction). Route only the
+// documents that carry the contradiction through DWS; the rest use local
+// extraction. Set NUTRIENT_FULL=true to run all six through Nutrient.
+const NUTRIENT_PRIORITY_DOCS = new Set([
+  "shenzhen-iso-9001-certificate",
+  "shenzhen-business-registration",
+  "nexus-business-registration",
+]);
+
 export async function runDocumentIntelligence(ledger?: ActivityLedger): Promise<DocIntelReport> {
   const documents: ProcessedDocument[] = [];
   const claims: ExtractedClaim[] = [];
   let liveCount = 0;
   const nutrientFailInjected = getDemoFlags().nutrient;
-  const nutrientEnabled = isNutrientConfigured() && !nutrientFailInjected;
+  const nutrientOn = isNutrientConfigured() && !nutrientFailInjected;
+  const nutrientFull = process.env.NUTRIENT_FULL === "true";
 
   // Extract all six PDFs concurrently, then merge in registry order.
   const perDoc = await Promise.all(
@@ -82,6 +92,7 @@ export async function runDocumentIntelligence(ledger?: ActivityLedger): Promise<
       let mode: "LIVE" | "LOCAL" = "LOCAL";
       const start = Date.now();
       let liveError: string | null = null;
+      const nutrientEnabled = nutrientOn && (nutrientFull || NUTRIENT_PRIORITY_DOCS.has(doc.id));
 
       if (nutrientEnabled) {
         try {
@@ -112,6 +123,7 @@ export async function runDocumentIntelligence(ledger?: ActivityLedger): Promise<
   for (const { doc, text, mode, start, liveError } of perDoc) {
     if (mode === "LIVE") liveCount++;
     const fields = parseFields(text);
+    const routedLocal = nutrientOn && !nutrientFull && !NUTRIENT_PRIORITY_DOCS.has(doc.id);
 
     ledger?.record({
       sponsor: "Nutrient",
@@ -134,7 +146,9 @@ export async function runDocumentIntelligence(ledger?: ActivityLedger): Promise<
             ? `Nutrient call failed (${liveError}); local PDF text extraction used for this document.`
             : nutrientFailInjected
               ? "Nutrient failure injected via demo control — local PDF text extraction used."
-              : "NUTRIENT_API_KEY not configured — local PDF text extraction used. Set the key to run this via Nutrient DWS.",
+              : routedLocal
+                ? "Routed to local extraction to conserve Nutrient DWS credits (free tier: 50). The conflict-bearing documents go through DWS; set NUTRIENT_FULL=true to run all six."
+                : "NUTRIENT_API_KEY not configured — local PDF text extraction used. Set the key to run this via Nutrient DWS.",
     });
     documents.push({
       id: doc.id,

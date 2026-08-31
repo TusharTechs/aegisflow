@@ -10,6 +10,39 @@ export function isNutrientConfigured(): boolean {
   return Boolean(process.env.NUTRIENT_API_KEY);
 }
 
+/** DWS json-content / markdown / text responses vary in shape — pull text from any of them. */
+function pickText(json: unknown): string {
+  if (typeof json === "string") return json;
+  if (!json || typeof json !== "object") return "";
+  const j = json as Record<string, unknown>;
+  if (typeof j.markdown === "string") return j.markdown;
+  if (typeof j.plainText === "string") return j.plainText;
+  if (typeof j.text === "string") return j.text;
+  if (Array.isArray(j.pages)) {
+    return j.pages
+      .map((p) => {
+        const pg = p as Record<string, unknown>;
+        if (typeof pg.plainText === "string") return pg.plainText;
+        if (typeof pg.markdown === "string") return pg.markdown;
+        if (typeof pg.text === "string") return pg.text;
+        if (Array.isArray(pg.content)) {
+          return pg.content
+            .map((c) => {
+              const el = c as Record<string, unknown>;
+              return typeof el.text === "string" ? el.text : typeof el.value === "string" ? el.value : "";
+            })
+            .join(" ");
+        }
+        return "";
+      })
+      .join("\n");
+  }
+  if (Array.isArray(j.content)) {
+    return j.content.map((c) => (c as Record<string, unknown>).text ?? "").join(" ");
+  }
+  return "";
+}
+
 /**
  * Text + structured extraction via the Processor API `/build` endpoint with a
  * `json-content` output. Claims' provenance points back to the fields this pulls.
@@ -37,15 +70,14 @@ export async function extractTextViaNutrient(bytes: Buffer, filename: string): P
       body: form,
       signal: controller.signal,
     });
-    if (!res.ok) throw new Error(`Nutrient HTTP ${res.status}`);
-    const json = await res.json();
-    // json-content: { pages: [{ plainText }] }; also tolerate flatter shapes.
-    if (Array.isArray(json.pages)) {
-      return json.pages.map((p: { plainText?: string; text?: string }) => p.plainText ?? p.text ?? "").join("\n");
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(`Nutrient HTTP ${res.status}${detail ? ` — ${detail.slice(0, 160)}` : ""}`);
     }
-    if (typeof json.plainText === "string") return json.plainText;
-    if (typeof json.text === "string") return json.text;
-    throw new Error("Unrecognized Nutrient response shape");
+    const json = await res.json();
+    const text = pickText(json);
+    if (text && text.trim()) return text;
+    throw new Error("Nutrient returned no extractable text");
   } finally {
     clearTimeout(timeout);
   }

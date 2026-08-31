@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { appendAudit, getIncident, transitionIncident } from "@/lib/incidents/repository";
+import { appendAudit, getIncident, resetRepository, transitionIncident } from "@/lib/incidents/repository";
 import { rankSuppliers } from "@/lib/suppliers/ranking";
 import { buildContractPayload } from "@/lib/documents/contract";
 import { generateViaDoctavian, isDoctavianConfigured } from "@/integrations/doctavian/client";
@@ -15,6 +15,11 @@ export async function approve(id: string) {
     await transitionIncident(id, "APPROVED", "HUMAN", `Human approved transition to ${recommended}`);
     revalidatePath(`/incidents/${id}`);
   } catch {}
+}
+
+export async function resetDemo() {
+  await resetRepository();
+  revalidatePath("/", "layout");
 }
 
 export async function requestEvidence(id: string) {
@@ -35,7 +40,7 @@ export async function prepareDocuments(id: string) {
   const incident = await getIncident(id);
   if (!incident || incident.state !== "APPROVED") return;
 
-  const ranked = rankSuppliers(incident.alternativeSuppliers);
+  const ranked = rankSuppliers(incident);
   const recommended = incident.alternativeSuppliers.find((s) => s.recommendation) ?? ranked[0].supplier;
   const payload = buildContractPayload(incident, recommended, incident.decision);
 

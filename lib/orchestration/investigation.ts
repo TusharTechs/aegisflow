@@ -79,7 +79,7 @@ export async function* runInvestigation(id: string): AsyncGenerator<Investigatio
   });
   await pace(350);
 
-  const ranked = rankSuppliers(incident.alternativeSuppliers);
+  const ranked = rankSuppliers(incident);
   for (const r of ranked) {
     const supplier = incident.alternativeSuppliers.find((s) => s.id === r.supplier.id);
     if (!supplier) continue;

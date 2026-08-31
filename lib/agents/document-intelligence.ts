@@ -116,7 +116,7 @@ export function mergeDocClaims(incident: Incident, report: DocIntelReport) {
     const supplier = incident.alternativeSuppliers.find((s) => s.id === ec.supplierId);
     if (!supplier) continue;
     const evidence = { documentId: ec.documentId, field: ec.field, mode: ec.mode };
-    if (ec.refClaimId) {
+        if (ec.refClaimId) {
       const claim = supplier.claims.find((c) => c.id === ec.refClaimId);
       if (!claim) continue;
       claim.confidence = ec.confidence;
@@ -124,6 +124,9 @@ export function mergeDocClaims(incident: Incident, report: DocIntelReport) {
       if (ec.conflictReason) claim.conflictReason = ec.conflictReason;
       claim.documentEvidence = evidence;
     } else {
+      // Idempotent: never append the same extracted claim twice on re-runs
+      const exists = supplier.claims.some((c) => c.text === ec.text);
+      if (exists) continue;
       supplier.claims.push({
         id: `${supplier.id}-doc-${supplier.claims.length + 1}`,
         text: ec.text,

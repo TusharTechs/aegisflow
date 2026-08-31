@@ -19,7 +19,7 @@ export default async function IncidentPage({ params }: Props) {
   const incident = await getIncident(id);
   if (!incident) notFound();
   
-  const ranked = rankSuppliers(incident.alternativeSuppliers);
+  const ranked = rankSuppliers(incident);
   const externalCounts = corroborationBySupplier(incident);
   const investigated = incident.state !== "INVESTIGATING";
   const recommendation = investigated ? ranked[0] : null;

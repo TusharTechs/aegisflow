@@ -1,4 +1,4 @@
-import { ExternalLink, FileSignature, UserCheck } from "lucide-react";
+import { ArrowRight, ExternalLink, FileSignature, UserCheck } from "lucide-react";
 import { Incident } from "@/schemas/core";
 import { RankedSupplier } from "@/lib/suppliers/ranking";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,7 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { approve, prepareDocuments, reject, requestEvidence, signAgreement } from "@/lib/orchestration/actions";
 
-const inputCls = "h-9 w-full rounded-md border bg-transparent px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+const inputCls =
+  "h-9 w-full rounded-md border bg-transparent px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 export function DecisionPanel({ incident, recommendation }: { incident: Incident; recommendation: RankedSupplier | null }) {
   const doc = incident.generatedDocument;
@@ -30,6 +31,12 @@ export function DecisionPanel({ incident, recommendation }: { incident: Incident
               {incident.decision && (
                 <>
                   <p className="text-xs leading-relaxed text-muted-foreground">{incident.decision.reasoning}</p>
+                  <a
+                    href={`/incidents/${incident.id}/why`}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                  >
+                    Why this recommendation? <ArrowRight className="h-3 w-3" />
+                  </a>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <Badge variant="info">Confidence {incident.decision.confidence}%</Badge>
                     <span>Reasoning: {incident.decision.source === "gemini" ? "Gemini" : "Deterministic fallback"}</span>

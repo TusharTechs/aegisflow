@@ -6,6 +6,7 @@ import { isXanoConfigured } from "@/integrations/xano/client";
 
 export interface IAegisRepository {
   mode: "LOCAL" | "XANO";
+  reset?(): void;
   listIncidents(): Promise<Incident[]>;
   getIncident(id: string): Promise<Incident | undefined>;
   saveIncident(incident: Incident): Promise<void>;
@@ -16,6 +17,12 @@ const globalStore = globalThis as unknown as { __aegisStore?: Map<string, Incide
 
 export class InMemoryRepository implements IAegisRepository {
   mode = "LOCAL" as const;
+
+  reset(): void {
+    const store = new Map<string, Incident>();
+    store.set(DEMO_INCIDENT.id, structuredClone(DEMO_INCIDENT));
+    globalStore.__aegisStore = store;
+  }
 
   private store(): Map<string, Incident> {
     if (!globalStore.__aegisStore) {
@@ -87,4 +94,8 @@ export async function transitionIncident(
   incident.state = to;
   await repository.saveIncident(incident);
   await repository.appendAudit(id, event ?? `State transition: ${to}`, actor);
+}
+
+export async function resetRepository(): Promise<void> {
+  getRepository().reset?.();
 }

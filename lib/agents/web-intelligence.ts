@@ -73,28 +73,29 @@ export async function runWebIntelligence(incident: Incident, ledger?: ActivityLe
 
   for (const { p, req, start, liveResults, liveError } of perQuery) {
     if (liveResults) {
-      liveResults.forEach((r, i) => {
-        sources.push({
-          id: `src-${sources.length + 1}`,
-          query: p.query,
-          supplierId: p.supplierId,
-          title: r.title,
-          url: r.url,
-          snippet: r.snippet,
-          engine: "google",
-          observedAt,
-          mode: "LIVE",
-          relevance: Math.max(20, relevance(p.query, r.title, r.snippet) - i * 5),
-        });
-      });
-      // Demo suppliers are fictional, so live Google can't corroborate them by
-      // name. Alongside the live market/news intelligence, attach the curated
-      // supplier-registry records (what a licensed supplier-data feed would
-      // return) so the risk model still has a corroboration signal. Tagged SEEDED.
       if (p.supplierId) {
+        // Supplier-specific query: the call is real (see the ledger), but the demo
+        // suppliers are fictional, so live hits are about similarly-named real
+        // companies. Corroboration comes from the curated supplier-registry records
+        // (what a licensed supplier-data feed returns), tagged DEMO SEEDED.
         for (const s of seededSourcesFor(p.intent, p.query, p.supplierId)) {
           sources.push({ ...s, id: `src-${sources.length + 1}`, observedAt });
         }
+      } else {
+        liveResults.forEach((r, i) => {
+          sources.push({
+            id: `src-${sources.length + 1}`,
+            query: p.query,
+            supplierId: p.supplierId,
+            title: r.title,
+            url: r.url,
+            snippet: r.snippet,
+            engine: "google",
+            observedAt,
+            mode: "LIVE",
+            relevance: Math.max(20, relevance(p.query, r.title, r.snippet) - i * 5),
+          });
+        });
       }
       ledger?.record({
         sponsor: "SerpApi",
@@ -110,8 +111,8 @@ export async function runWebIntelligence(incident: Incident, ledger?: ActivityLe
           liveResults.length === 0
             ? "Zero organic results — recorded as absence of corroboration (a negative signal in the risk model)."
             : p.supplierId
-              ? `${liveResults.length} live organic result(s) captured; supplier-registry records attached separately (demo suppliers are fictional so live search can't corroborate them by name).`
-              : `${liveResults.length} organic result(s) captured.`,
+              ? `${liveResults.length} live organic result(s) — logged for audit; corroboration drawn from supplier-registry records (fictional demo suppliers aren't on the live web).`
+              : `${liveResults.length} organic result(s) merged into the case file.`,
       });
     } else {
       const seeded = seededSourcesFor(p.intent, p.query, p.supplierId);

@@ -39,6 +39,17 @@ export default function Home() {
         </div>
       </section>
 
+      <section className="mx-auto max-w-5xl px-6 pb-16">
+        <p className="text-center text-xs uppercase tracking-wide text-muted-foreground">Built on</p>
+        <div className="mt-3 flex flex-wrap justify-center gap-2">
+          {["SerpApi", "Nutrient", "Doctavian", "Foxit", "Xano", "Gemini API", "Next.js", "Zod"].map((n) => (
+            <span key={n} className="rounded-full border bg-card px-3 py-1 text-xs text-muted-foreground">
+              {n}
+            </span>
+          ))}
+        </div>
+      </section>
+
       <section id="how" className="mx-auto grid max-w-5xl gap-4 px-6 pb-24 md:grid-cols-3">
         {[
           { icon: SearchCheck, title: "Investigate", body: "Supplier documents and live web intelligence are collected into one case file in minutes." },

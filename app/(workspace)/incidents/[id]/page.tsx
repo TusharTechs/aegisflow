@@ -11,6 +11,7 @@ import { DecisionPanel } from "@/components/incidents/decision-panel";
 import { AuditTrail } from "@/components/incidents/audit-trail";
 import { ExternalSources } from "@/components/evidence/external-sources";
 import { ProcessedDocuments } from "@/components/documents/processed-documents";
+import { StateStepper } from "@/components/incidents/state-stepper";
 
 type Props = { params: Promise<{ id: string }> | { id: string } };
 
@@ -18,7 +19,7 @@ export default async function IncidentPage({ params }: Props) {
   const { id } = await params;
   const incident = await getIncident(id);
   if (!incident) notFound();
-  
+
   const ranked = rankSuppliers(incident);
   const externalCounts = corroborationBySupplier(incident);
   const investigated = incident.state !== "INVESTIGATING";
@@ -38,6 +39,8 @@ export default async function IncidentPage({ params }: Props) {
         </div>
         {investigated && <Badge variant="info">{incident.state.replace(/_/g, " ")}</Badge>}
       </div>
+
+      <StateStepper state={incident.state} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">

@@ -1,3 +1,7 @@
+import { getDemoFlags } from "@/lib/orchestration/demo-controls";
+// first line of serpSearch:
+if (getDemoFlags().serpapi) throw new Error("SerpApi failure injected for demo");
+
 export interface SerpResult {
   title: string;
   url: string;

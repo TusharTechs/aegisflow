@@ -6,6 +6,7 @@ import { rankSuppliers } from "@/lib/suppliers/ranking";
 import { buildContractPayload } from "@/lib/documents/contract";
 import { generateViaDoctavian, isDoctavianConfigured } from "@/integrations/doctavian/client";
 import { createFoxitSigningSession, isFoxitConfigured } from "@/integrations/foxit/client";
+import { getDemoFlags, setDemoFlag, DemoFlags } from "@/lib/orchestration/demo-controls";
 
 export async function approve(id: string) {
   try {
@@ -103,4 +104,12 @@ export async function signAgreement(id: string, formData: FormData) {
     `Agreement signed by ${signerName} (${signerTitle}) — irreversible action authorized by human`
   );
   revalidatePath(`/incidents/${id}`);
+}
+
+export async function getDemoControlsState(): Promise<DemoFlags> {
+  return getDemoFlags();
+}
+
+export async function setDemoFlagAction(key: string, value: boolean) {
+  setDemoFlag(key as keyof DemoFlags, value);
 }

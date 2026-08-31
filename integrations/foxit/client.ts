@@ -1,6 +1,4 @@
-// Foxit eSign signing-session adapter. Creates a signing package for the
-// generated agreement. Throws on any failure; the in-app human ceremony is
-// always the fallback and always the source of authorization.
+import { getDemoFlags } from "@/lib/orchestration/demo-controls";
 
 export function isFoxitConfigured(): boolean {
   return Boolean(process.env.FOXIT_API_KEY);
@@ -10,6 +8,7 @@ export async function createFoxitSigningSession(opts: {
   documentTitle: string;
   signerName: string;
 }): Promise<{ sessionId: string }> {
+  if (getDemoFlags().foxit) throw new Error("Foxit failure injected for demo");
   const key = process.env.FOXIT_API_KEY!;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);

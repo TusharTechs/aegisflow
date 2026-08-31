@@ -1,11 +1,11 @@
-// Follows the Nutrient API (https://www.nutrient.io/). The adapter normalizes
-// response shapes and throws on any failure so callers fall back honestly.
+import { getDemoFlags } from "@/lib/orchestration/demo-controls";
 
 export function isNutrientConfigured(): boolean {
   return Boolean(process.env.NUTRIENT_API_KEY);
 }
 
 export async function extractTextViaNutrient(bytes: Buffer, filename: string): Promise<string> {
+  if (getDemoFlags().nutrient) throw new Error("Nutrient failure injected for demo");
   const key = process.env.NUTRIENT_API_KEY!;
   const form = new FormData();
   // Copy into a fresh Uint8Array: Buffer<ArrayBufferLike> is not a valid BlobPart in TS 5.7+

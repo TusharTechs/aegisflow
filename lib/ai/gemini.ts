@@ -1,3 +1,4 @@
+import { getDemoFlags } from "@/lib/orchestration/demo-controls";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { z } from "zod";
 
@@ -21,6 +22,7 @@ export async function generateStructured<T>(opts: {
   prompt: string;
   fallback: T;
 }): Promise<AiResult<T>> {
+  if (getDemoFlags().gemini) return { value: opts.fallback, source: "fallback" };
   const gemini = getGemini();
   if (!gemini) return { value: opts.fallback, source: "fallback" };
   try {

@@ -72,8 +72,8 @@ export async function runDocumentIntelligence(): Promise<DocIntelReport> {
 
   for (const doc of DOC_REGISTRY) {
     const pdfPath = path.join(process.cwd(), "public", "docs", `${doc.id}.pdf`);
-    let text: string;
-    let mode: "LIVE" | "LOCAL";
+    let text = "";
+    let mode: "LIVE" | "LOCAL" = "LOCAL";
 
     if (isNutrientConfigured()) {
       try {
@@ -82,11 +82,19 @@ export async function runDocumentIntelligence(): Promise<DocIntelReport> {
         mode = "LIVE";
         liveCount++;
       } catch {
-        text = await extractTextLocal(pdfPath);
+        try {
+          text = await extractTextLocal(pdfPath);
+        } catch {
+          text = "";
+        }
         mode = "LOCAL";
       }
     } else {
-      text = await extractTextLocal(pdfPath);
+      try {
+        text = await extractTextLocal(pdfPath);
+      } catch {
+        text = "";
+      }
       mode = "LOCAL";
     }
 

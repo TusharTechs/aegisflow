@@ -8,6 +8,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { ResetDemoButton } from "@/components/reset-demo-button";
+import { DemoControls } from "@/components/demo-controls";
 
 const NAV = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
@@ -20,7 +22,6 @@ const NAV = [
 ];
 
 export function AppShell({ children, persistence }: { children: React.ReactNode; persistence?: "XANO" | "LOCAL" }) {
-
   const pathname = usePathname();
 
   return (
@@ -53,16 +54,20 @@ export function AppShell({ children, persistence }: { children: React.ReactNode;
         </nav>
         <div className="border-t p-4 text-xs text-muted-foreground">
           AI prepares. <span className="font-medium text-foreground">Humans authorize.</span>
-        <div className="mt-1">
-          Persistence: <span className="font-medium text-foreground">{persistence ?? "LOCAL"}</span>
+          <div className="mt-1">
+            Persistence: <span className="font-medium text-foreground">{persistence ?? "LOCAL"}</span>
+          </div>
         </div>
-      </div>
       </aside>
 
       <div className="pl-60">
         <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b bg-card/80 px-8 backdrop-blur">
           <span className="text-sm text-muted-foreground">Meridian Manufacturing Co.</span>
-          <Badge variant="warning">DEMO MODE</Badge>
+          <div className="flex items-center gap-2">
+            <DemoControls />
+            <ResetDemoButton />
+            <Badge variant="warning">DEMO MODE</Badge>
+          </div>
         </header>
         <main className="p-8">{children}</main>
       </div>

@@ -1,12 +1,11 @@
-// Doctavian document-generation API. The adapter sends the structured contract
-// payload as template variables and throws on any failure so the caller falls
-// back to the honest local render.
+import { getDemoFlags } from "@/lib/orchestration/demo-controls";
 
 export function isDoctavianConfigured(): boolean {
   return Boolean(process.env.DOCTAVIAN_API_KEY);
 }
 
 export async function generateViaDoctavian(payload: unknown): Promise<{ url: string }> {
+  if (getDemoFlags().doctavian) throw new Error("Doctavian failure injected for demo");
   const key = process.env.DOCTAVIAN_API_KEY!;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);

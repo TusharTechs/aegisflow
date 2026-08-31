@@ -1,6 +1,4 @@
 import { getDemoFlags } from "@/lib/orchestration/demo-controls";
-// first line of serpSearch:
-if (getDemoFlags().serpapi) throw new Error("SerpApi failure injected for demo");
 
 export interface SerpResult {
   title: string;
@@ -13,6 +11,7 @@ export function isSerpConfigured(): boolean {
 }
 
 export async function serpSearch(query: string, num = 4): Promise<SerpResult[]> {
+  if (getDemoFlags().serpapi) throw new Error("SerpApi failure injected for demo");
   const key = process.env.SERPAPI_API_KEY;
   if (!key) throw new Error("SERPAPI_API_KEY not configured");
 

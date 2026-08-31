@@ -1,0 +1,24 @@
+<svg width="300" height="72" viewBox="0 0 300 72" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="AegisFlow">
+  <defs>
+    <linearGradient id="wmd-shield" x1="16" y1="10" x2="50" y2="62" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#60A5FA"/>
+      <stop offset="1" stop-color="#2563EB"/>
+    </linearGradient>
+    <clipPath id="wmd-clip">
+      <path d="M14 18.67C14 16.09 16.09 14 18.67 14H45.33C47.91 14 50 16.09 50 18.67V33.5C50 45.6 41.27 54.73 32.87 59.07C32.32 59.35 31.68 59.35 31.13 59.07C22.73 54.73 14 45.6 14 33.5V18.67Z"/>
+    </clipPath>
+  </defs>
+
+  <path d="M14 18.67C14 16.09 16.09 14 18.67 14H45.33C47.91 14 50 16.09 50 18.67V33.5C50 45.6 41.27 54.73 32.87 59.07C32.32 59.35 31.68 59.35 31.13 59.07C22.73 54.73 14 45.6 14 33.5V18.67Z"
+        fill="url(#wmd-shield)"/>
+  <g clip-path="url(#wmd-clip)" stroke-linecap="round">
+    <path d="M8 27H24" stroke="#DBEAFE" stroke-width="2" opacity="0.8"/>
+    <path d="M8 33H24" stroke="#EFF6FF" stroke-width="2" opacity="0.65"/>
+    <path d="M8 39H24" stroke="#EFF6FF" stroke-width="2" opacity="0.45"/>
+  </g>
+  <path d="M23 33.5L28 39L38.5 25.5" stroke="#FFFFFF" stroke-width="4.4" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <text x="66" y="46" font-family="'Helvetica Neue', Helvetica, Arial, system-ui, sans-serif" font-size="33" font-weight="700" letter-spacing="-1">
+    <tspan fill="#F8FAFC">Aegis</tspan><tspan fill="#60A5FA">Flow</tspan>
+  </text>
+</svg>

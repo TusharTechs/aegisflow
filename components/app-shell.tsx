@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  ShieldCheck, LayoutDashboard, AlertTriangle, Factory,
+  LayoutDashboard, AlertTriangle, Factory,
   Network, FileText, UserCheck, ScrollText, Plug, Building2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { AegisWordmark } from "@/components/brand";
 import { ResetDemoButton } from "@/components/reset-demo-button";
 import { DemoControls } from "@/components/demo-controls";
 
@@ -37,9 +38,8 @@ export function AppShell({
   return (
     <div className="min-h-screen bg-background">
       <aside className="fixed inset-y-0 left-0 flex w-60 flex-col border-r bg-card">
-        <div className="flex h-14 items-center gap-2 border-b px-5">
-          <ShieldCheck className="h-5 w-5 text-primary" />
-          <span className="font-semibold tracking-tight">AegisFlow</span>
+        <div className="flex h-14 items-center border-b px-5">
+          <AegisWordmark />
         </div>
         <nav className="flex-1 space-y-1 p-3">
           {NAV.map((item) => {

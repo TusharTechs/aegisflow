@@ -1,14 +1,12 @@
 import Link from "next/link";
-import { ArrowRight, FileSearch, SearchCheck, ShieldCheck, UserCheck, AlertTriangle } from "lucide-react";
+import { ArrowRight, FileSearch, SearchCheck, UserCheck, AlertTriangle } from "lucide-react";
+import { AegisWordmark } from "@/components/brand";
 
 export default function Home() {
   return (
     <main className="min-h-screen bg-background">
       <header className="flex h-14 items-center justify-between border-b px-8">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="h-5 w-5 text-primary" />
-          <span className="font-semibold tracking-tight">AegisFlow</span>
-        </div>
+        <AegisWordmark />
         <Link href="/dashboard" className="text-sm font-medium text-primary hover:underline">
           Open Dashboard
         </Link>

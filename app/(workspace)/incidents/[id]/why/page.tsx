@@ -19,7 +19,7 @@ export default async function WhyPage({ params }: Props) {
           Transparent risk model for <span className="font-mono">{incident.id}</span>. Every score cites its evidence. Adjust the weights to stress-test the decision.
         </p>
       </div>
-      <WhyPanel incident={incident} ranked={ranked} />
+      <WhyPanel ranked={ranked} />
     </div>
   );
 }

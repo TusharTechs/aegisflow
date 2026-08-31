@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { RotateCcw } from "lucide-react";
-import { Incident } from "@/schemas/core";
 import { RankedSupplier } from "@/lib/suppliers/ranking";
 import {
   DEFAULT_WEIGHTS,
@@ -20,7 +19,7 @@ import { cn } from "@/lib/utils";
 const barColor = (score: number) => (score >= 80 ? "bg-success" : score >= 60 ? "bg-warning" : "bg-destructive");
 const levelVariant = (level: string) => (level === "LOW" ? "success" : level === "MEDIUM" ? "warning" : "critical");
 
-export function WhyPanel({ incident, ranked }: { incident: Incident; ranked: RankedSupplier[] }) {
+export function WhyPanel({ ranked }: { ranked: RankedSupplier[] }) {
   const [weights, setWeights] = useState<RiskWeights>(DEFAULT_WEIGHTS);
   const [selectedId, setSelectedId] = useState<string>(ranked[0]?.supplier.id ?? "");
   const selected = ranked.find((r) => r.supplier.id === selectedId) ?? ranked[0];

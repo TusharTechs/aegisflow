@@ -3,9 +3,13 @@ import { DEMO_INCIDENT } from "@/data/demo/pacific-components";
 import { Claim, Incident, Supplier } from "@/schemas/core";
 import { xano } from "./client";
 
+type EvidenceJson = Partial<
+  Pick<Incident, "externalSources" | "documentsProcessed" | "apiActivity" | "decision" | "generatedDocument" | "signature">
+> | null;
+
 interface IncidentRow {
   id: number; incident_key: string; supplier: string; affected_product: string;
-  status: string; inventory_days: number; revenue_exposure: number; state: string; evidence_json?: any;
+  status: string; inventory_days: number; revenue_exposure: number; state: string; evidence_json?: EvidenceJson;
 }
 interface SupplierRow {
   id: number; incident_id: number; supplier_key: string; name: string; location: string;
@@ -14,7 +18,7 @@ interface SupplierRow {
 }
 interface ClaimRow {
   id: number; supplier_id: number; claim_key: string; text: string; source: string; ts: string;
-  confidence: number; status: string; conflict_reason: string; document_evidence?: any;
+  confidence: number; status: string; conflict_reason: string; document_evidence?: Claim["documentEvidence"];
 }
 interface AuditRow { incident_id: number; event_ts: string; event: string; actor: string; }
 
@@ -123,7 +127,7 @@ export class XanoRepository implements IAegisRepository {
     }
 
     const auditRows = (await xano.get("/audit_event", { incident_id: String(row.id) })) as AuditRow[];
-    const ev = row.evidence_json ?? {};
+    const ev: NonNullable<EvidenceJson> = row.evidence_json ?? {};
 
     return {
       id: row.incident_key,

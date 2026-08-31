@@ -75,9 +75,13 @@ class ResilientRepository implements IAegisRepository {
   reset(): void {
     this.degraded = false;
     this.degradedReason = undefined;
-    this.hydrated.clear();
     this.writeQueue = [];
     this.local.reset();
+    // Keep everything marked hydrated so we serve the fresh local copy instead of
+    // re-pulling stale state, and push the reset state back to Xano in the background.
+    this.hydrated = new Set([DEMO_INCIDENT.id]);
+    const fresh = structuredClone(DEMO_INCIDENT);
+    this.enqueueWrite("save", () => this.xano.saveIncident(fresh));
   }
 
   private trip(err: unknown) {

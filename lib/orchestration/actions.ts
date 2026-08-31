@@ -222,7 +222,7 @@ export async function signAgreement(id: string, formData: FormData) {
       ms: Date.now() - foxitStart,
       note: foxitFail
         ? "Foxit failure injected via demo control — in-app human signing ceremony used."
-        : "FOXIT_ESIGN_CLIENT_ID / _SECRET not configured — in-app human signing ceremony is the authorization of record.",
+        : "FOXIT_CLIENT_ID / _SECRET not configured — in-app human signing ceremony is the authorization of record.",
     });
   }
 

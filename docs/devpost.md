@@ -94,9 +94,9 @@ This is the whole product thesis. The agent prepares the document *and* the sign
 request, but a finite-state machine plus a named `assertHumanMaySign(actor, state)`
 guard make it structurally impossible for a non-human actor to create the Foxit
 eSign folder or reach the `SIGNED` state. We wrote the tests that prove the AI is
-blocked even when it calls the raw transition directly. The eSign integration does
-the real OAuth2 `client_credentials` token exchange against
-`na1.foxitesign.foxit.com` and creates the signing folder with `sendNow: false` —
+blocked even when it calls the raw transition directly. The eSign integration
+authenticates with the unified Foxit `client_id` / `client_secret` and creates the
+signing folder via `POST /esign/api/v1/folders/createfolder` with `sendNow: false` —
 prepared under the human's authorization, never auto-sent by the agent.
 
 ### Xano — Rebuild a SaaS Tool You Hate

@@ -1,5 +1,5 @@
 import { Incident, Supplier } from "@/schemas/core";
-import { DEFAULT_WEIGHTS, DimensionKey, RiskWeights, computeTotal, riskLevel } from "./weights";
+import { DEFAULT_WEIGHTS, DimensionKey, RiskWeights, computeTotal, riskLevel, applyIntegrityCap, INTEGRITY_CAP } from "./weights";
 
 export interface DimensionScore {
   key: DimensionKey;
@@ -12,8 +12,13 @@ export interface RiskEvaluation {
   supplierName: string;
   scores: Record<DimensionKey, number>;
   dimensions: DimensionScore[];
+  /** Weighted total AFTER the integrity gate. */
   total: number;
+  /** Weighted total BEFORE the integrity gate — shown for transparency. */
+  rawTotal: number;
   level: "LOW" | "MEDIUM" | "HIGH";
+  disqualified: boolean;
+  disqualificationReason?: string;
 }
 
 const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
@@ -115,8 +120,26 @@ export function evaluateSupplier(supplier: Supplier, incident: Incident, weights
   }
 
   const scores = Object.fromEntries(dims.map((d) => [d.key, d.score])) as Record<DimensionKey, number>;
-  const total = computeTotal(scores, weights);
-  return { supplierId: supplier.id, supplierName: supplier.name, scores, dimensions: dims, total, level: riskLevel(total) };
+  const rawTotal = computeTotal(scores, weights);
+
+  const conflictClaims = supplier.claims.filter((c) => c.status === "CONFLICT");
+  const disqualified = conflictClaims.length > 0;
+  const total = applyIntegrityCap(rawTotal, disqualified);
+  const disqualificationReason = disqualified
+    ? `Unresolved evidence conflict — ${conflictClaims[0].conflictReason ?? conflictClaims[0].text}. Score capped at ${INTEGRITY_CAP}/100; cannot be recommended at any weighting.`
+    : undefined;
+
+  return {
+    supplierId: supplier.id,
+    supplierName: supplier.name,
+    scores,
+    dimensions: dims,
+    total,
+    rawTotal,
+    level: riskLevel(total),
+    disqualified,
+    disqualificationReason,
+  };
 }
 
 export function evaluateAll(incident: Incident, weights: RiskWeights = DEFAULT_WEIGHTS): RiskEvaluation[] {

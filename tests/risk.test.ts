@@ -24,6 +24,16 @@ describe("risk engine", () => {
     expect(evs[0].supplierId).toBe("SUP-B");
   });
 
+  it("the integrity gate holds even at PURE cost weight (0 on every other dimension)", () => {
+    const pureCost = { compliance: 0, delivery: 0, evidence: 0, reliability: 0, cost: 50, compatibility: 0 };
+    const evs = evaluateAll(fixture(), pureCost);
+    const shenzhen = evs.find((e) => e.supplierId === "SUP-C")!;
+    expect(shenzhen.disqualified).toBe(true);
+    expect(shenzhen.total).toBeLessThanOrEqual(49);
+    expect(shenzhen.rawTotal).toBeGreaterThan(49); // it WOULD win without the gate
+    expect(evs[0].supplierId).not.toBe("SUP-C"); // ...but it doesn't
+  });
+
   it("computeTotal normalizes arbitrary weights", () => {
     const scores: Record<DimensionKey, number> = {
       compliance: 100, delivery: 100, evidence: 100, reliability: 100, cost: 100, compatibility: 100,

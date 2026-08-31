@@ -9,7 +9,7 @@ import {
   DIMENSIONS,
   DIMENSION_LABELS,
   RiskWeights,
-  computeTotal,
+  scoreWithGate,
   riskLevel,
 } from "@/lib/risk/weights";
 import { Badge } from "@/components/ui/badge";
@@ -29,7 +29,12 @@ export function WhyPanel({ incident, ranked }: { incident: Incident; ranked: Ran
   const liveRanking = useMemo(
     () =>
       ranked
-        .map((r) => ({ id: r.supplier.id, name: r.supplier.name, total: computeTotal(r.evaluation.scores, weights) }))
+        .map((r) => ({
+          id: r.supplier.id,
+          name: r.supplier.name,
+          total: scoreWithGate(r.evaluation.scores, weights, r.evaluation.disqualified),
+          disqualified: r.evaluation.disqualified,
+        }))
         .sort((a, b) => b.total - a.total),
     [ranked, weights]
   );
@@ -63,6 +68,16 @@ export function WhyPanel({ incident, ranked }: { incident: Incident; ranked: Ran
               </div>
             </CardHeader>
             <CardContent className="space-y-5">
+              {selected.evaluation.disqualified && (
+                <div className="rounded-md border border-destructive/40 bg-destructive/[0.04] p-3 text-xs">
+                  <p className="font-semibold text-destructive">Integrity gate active</p>
+                  <p className="mt-1 text-muted-foreground">
+                    {selected.evaluation.disqualificationReason} Unweighted score would be{" "}
+                    <span className="font-mono">{selected.evaluation.rawTotal}</span> — the gate holds it at{" "}
+                    <span className="font-mono">{liveTotal}</span> no matter how you move the sliders.
+                  </p>
+                </div>
+              )}
               {selected.evaluation.dimensions.map((d) => (
                 <div key={d.key}>
                   <div className="mb-1 flex items-center justify-between text-sm">
@@ -152,7 +167,8 @@ export function WhyPanel({ incident, ranked }: { incident: Incident; ranked: Ran
               </div>
             ))}
             <p className="text-xs text-muted-foreground">
-              The official recommendation uses default weights. Adjust them to stress-test the decision.
+              The official recommendation uses default weights. Adjust them to stress-test the decision — a
+              supplier with an unresolved evidence conflict is gated at {49}/100 and cannot win at any setting.
             </p>
           </CardContent>
         </Card>
@@ -172,6 +188,7 @@ export function WhyPanel({ incident, ranked }: { incident: Incident; ranked: Ran
                   <span>
                     {i + 1}. {r.name}
                     {r.id === ranked[0].supplier.id && <Badge variant="success" className="ml-2">Official pick</Badge>}
+                    {r.disqualified && <Badge variant="critical" className="ml-2">Gated</Badge>}
                   </span>
                   <span className="font-semibold">{r.total}</span>
                 </li>

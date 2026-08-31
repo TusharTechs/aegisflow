@@ -92,7 +92,8 @@ export function EvidenceConflict({ incident }: { incident: Incident }) {
           <p className="text-sm">
             <span className="font-semibold">AegisFlow does not treat these claims as true.</span>{" "}
             <span className="text-muted-foreground">
-              Even with the cost weight set to maximum, this supplier cannot win the recommendation.
+              An integrity gate caps any supplier with an unresolved conflict at 49/100 — so even with the cost
+              weight dragged to maximum, this supplier cannot win the recommendation.
             </span>
           </p>
           <a

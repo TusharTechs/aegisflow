@@ -15,9 +15,9 @@ export interface Decision {
 }
 
 const Schema = z.object({
-  reasoning: z.string(),
-  risks: z.array(z.string()).max(4),
-  unknowns: z.array(z.string()).max(4),
+  reasoning: z.string().min(1),
+  risks: z.array(z.string()).max(6).default([]),
+  unknowns: z.array(z.string()).max(6).default([]),
 });
 
 export async function explainDecision(
@@ -55,8 +55,9 @@ export async function explainDecision(
     prompt:
       `You are the Decision agent for AegisFlow. The deterministic risk model ranked ${top.supplier.name} first ` +
       `for incident ${incident.id} (${incident.affectedProduct}). Facts: ${JSON.stringify(facts)}. ` +
-      `Explain the recommendation in 2-3 sentences and list real risks/unknowns from the facts only. ` +
-      `Return JSON matching the schema. Do not invent facts.`,
+      `Return a JSON object with exactly these keys: "reasoning" (a 2-3 sentence string explaining the pick), ` +
+      `"risks" (array of short strings, from the facts only), "unknowns" (array of short strings). ` +
+      `Do not invent facts.`,
   });
 
   return {

@@ -18,6 +18,42 @@ export interface AiResult<T> {
   source: "gemini" | "fallback";
 }
 
+/** Read the text output across SDK versions / thinking models (skip `thought` parts). */
+function readText(res: { response: { text?: () => string; candidates?: unknown[] } }): string {
+  const cands = res.response.candidates as
+    | Array<{ content?: { parts?: Array<{ text?: string; thought?: boolean }> } }>
+    | undefined;
+  const fromParts = cands?.[0]?.content?.parts
+    ?.filter((p) => !p.thought && typeof p.text === "string")
+    .map((p) => p.text)
+    .join("");
+  if (fromParts && fromParts.trim()) return fromParts;
+  try {
+    return res.response.text?.() ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/** Tolerate markdown fences and leading/trailing prose around the JSON object. */
+function parseLenientJson(raw: string): unknown {
+  const cleaned = raw.replace(/```(?:json)?/gi, "").trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const first = cleaned.indexOf("{");
+    const last = cleaned.lastIndexOf("}");
+    if (first >= 0 && last > first) {
+      try {
+        return JSON.parse(cleaned.slice(first, last + 1));
+      } catch {
+        return undefined;
+      }
+    }
+    return undefined;
+  }
+}
+
 export async function generateStructured<T>(opts: {
   schema: z.ZodType<T>;
   prompt: string;
@@ -54,12 +90,20 @@ export async function generateStructured<T>(opts: {
   try {
     const model = gemini.getGenerativeModel({
       model: modelName,
-      generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
+      generationConfig: {
+        responseMimeType: "application/json",
+        temperature: 0.2,
+        // Gemini 3.x models "think" by default; the reasoning text leaks into
+        // the response and breaks strict JSON parsing. Turn it off.
+        ...({ thinkingConfig: { thinkingBudget: 0 } } as Record<string, unknown>),
+      },
     });
     const res = await model.generateContent(opts.prompt);
-    const parsed = opts.schema.safeParse(JSON.parse(res.response.text()));
+    const raw = readText(res);
+    const json = parseLenientJson(raw);
+    const parsed = json === undefined ? { success: false as const } : opts.schema.safeParse(json);
     if (!parsed.success) {
-      log("fallback", "Gemini response failed Zod validation — deterministic fallback used.", res.response.text());
+      log("fallback", "Gemini response failed Zod validation — deterministic fallback used.", raw.slice(0, 500));
       return { value: opts.fallback, source: "fallback" };
     }
     log("gemini", "Response Zod-validated before use.", parsed.data);

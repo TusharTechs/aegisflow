@@ -4,8 +4,8 @@ import { generateStructured } from "@/lib/ai/gemini";
 import type { ActivityLedger } from "@/lib/integrations/ledger";
 
 const AnalysisSchema = z.object({
-  urgency: z.enum(["CRITICAL", "HIGH", "MODERATE"]),
-  summary: z.string(),
+  urgency: z.enum(["CRITICAL", "HIGH", "MODERATE"]).optional(),
+  summary: z.string().min(1),
 });
 
 export interface AnalystOutput {
@@ -24,7 +24,8 @@ export async function analyzeIncident(incident: Incident, ledger?: ActivityLedge
       `You are the Incident Analyst agent for AegisFlow. Summarize this procurement disruption in one sentence. ` +
       `Use ONLY these facts: supplier=${incident.supplier}; product=${incident.affectedProduct}; ` +
       `inventoryDays=${incident.inventoryDays}; revenueExposureUSD=${incident.revenueExposure}. ` +
-      `Return JSON matching the schema. Do not invent facts.`,
+      `Return a JSON object with exactly these keys: "urgency" (one of "CRITICAL", "HIGH", "MODERATE") and ` +
+      `"summary" (a one-sentence string). Do not invent facts.`,
   });
   return { summary: res.value.summary, source: res.source };
 }

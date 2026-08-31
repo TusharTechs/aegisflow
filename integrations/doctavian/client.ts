@@ -1,5 +1,7 @@
 import { getDemoFlags } from "@/lib/orchestration/demo-controls";
 
+export const DOCTAVIAN_GENERATE_ENDPOINT = "https://api.doctavian.com/v1/documents/generate";
+
 export function isDoctavianConfigured(): boolean {
   return Boolean(process.env.DOCTAVIAN_API_KEY);
 }
@@ -10,7 +12,7 @@ export async function generateViaDoctavian(payload: unknown): Promise<{ url: str
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);
   try {
-    const res = await fetch("https://api.doctavian.com/v1/documents/generate", {
+    const res = await fetch(DOCTAVIAN_GENERATE_ENDPOINT, {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({

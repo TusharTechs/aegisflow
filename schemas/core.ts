@@ -99,6 +99,22 @@ export const SignatureRecordSchema = z.object({
 });
 export type SignatureRecord = z.infer<typeof SignatureRecordSchema>;
 
+export const ApiCallSchema = z.object({
+  id: z.string(),
+  sponsor: z.enum(["SerpApi", "Nutrient", "Doctavian", "Foxit", "Xano", "Gemini"]),
+  operation: z.string(),
+  method: z.string(),
+  endpoint: z.string(),
+  request: z.unknown().optional(),
+  response: z.unknown().optional(),
+  mode: z.enum(["LIVE", "LOCAL", "DEMO SEEDED"]),
+  status: z.enum(["ok", "fallback", "error"]),
+  ms: z.number(),
+  at: z.string(),
+  note: z.string().optional(),
+});
+export type ApiCall = z.infer<typeof ApiCallSchema>;
+
 export const ExternalSourceSchema = z.object({
   id: z.string(),
   query: z.string(),
@@ -131,6 +147,7 @@ export const IncidentSchema = z.object({
     source: z.enum(["gemini", "fallback"]),
   }).optional(),
   externalSources: z.array(ExternalSourceSchema).optional(),
+  apiActivity: z.array(ApiCallSchema).optional(),
   auditLog: z.array(z.object({
     timestamp: z.string(),
     event: z.string(),

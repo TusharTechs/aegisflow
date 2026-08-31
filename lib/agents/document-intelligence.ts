@@ -3,8 +3,10 @@ import path from "path";
 import { DOC_REGISTRY } from "@/data/demo/documents";
 import { Incident } from "@/schemas/core";
 import { ProcessedDocument } from "@/schemas/core";
-import { extractTextViaNutrient, isNutrientConfigured } from "@/integrations/nutrient/client";
+import { extractTextViaNutrient, isNutrientConfigured, NUTRIENT_EXTRACT_ENDPOINT } from "@/integrations/nutrient/client";
 import { extractTextLocal } from "@/integrations/nutrient/local-extract";
+import type { ActivityLedger } from "@/lib/integrations/ledger";
+import { getDemoFlags } from "@/lib/orchestration/demo-controls";
 
 export interface ExtractedClaim {
   supplierId: string;
@@ -65,23 +67,28 @@ function deriveClaims(docId: string, f: Record<string, string>, mode: "LIVE" | "
   }
 }
 
-export async function runDocumentIntelligence(): Promise<DocIntelReport> {
+export async function runDocumentIntelligence(ledger?: ActivityLedger): Promise<DocIntelReport> {
   const documents: ProcessedDocument[] = [];
   const claims: ExtractedClaim[] = [];
   let liveCount = 0;
+  const nutrientFailInjected = getDemoFlags().nutrient;
+  const nutrientEnabled = isNutrientConfigured() && !nutrientFailInjected;
 
   for (const doc of DOC_REGISTRY) {
     const pdfPath = path.join(process.cwd(), "public", "docs", `${doc.id}.pdf`);
     let text = "";
     let mode: "LIVE" | "LOCAL" = "LOCAL";
+    const start = Date.now();
+    let liveError: string | null = null;
 
-    if (isNutrientConfigured()) {
+    if (nutrientEnabled) {
       try {
         const bytes = await fs.readFile(pdfPath);
         text = await extractTextViaNutrient(bytes, `${doc.id}.pdf`);
         mode = "LIVE";
         liveCount++;
-      } catch {
+      } catch (err) {
+        liveError = err instanceof Error ? err.message : "unknown error";
         try {
           text = await extractTextLocal(pdfPath);
         } catch {
@@ -99,6 +106,26 @@ export async function runDocumentIntelligence(): Promise<DocIntelReport> {
     }
 
     const fields = parseFields(text);
+
+    ledger?.record({
+      sponsor: "Nutrient",
+      operation: `extract-text · ${doc.type}`,
+      method: "POST",
+      endpoint: NUTRIENT_EXTRACT_ENDPOINT,
+      request: { file: `${doc.id}.pdf`, supplier: doc.supplierId ?? "n/a", operation: "extract-text" },
+      response: { mode, field_count: Object.keys(fields).length, fields },
+      mode: mode === "LIVE" ? "LIVE" : "LOCAL",
+      status: mode === "LIVE" ? "ok" : liveError ? "error" : "fallback",
+      ms: Date.now() - start,
+      note:
+        mode === "LIVE"
+          ? `${Object.keys(fields).length} fields extracted via Nutrient DWS.`
+          : liveError
+            ? `Nutrient call failed (${liveError}); local PDF text extraction used for this document.`
+            : nutrientFailInjected
+              ? "Nutrient failure injected via demo control — local PDF text extraction used."
+              : "NUTRIENT_API_KEY not configured — local PDF text extraction used. Set the key to run this via Nutrient DWS.",
+    });
     documents.push({
       id: doc.id,
       name: doc.name,

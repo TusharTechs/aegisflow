@@ -1,10 +1,11 @@
-import { appendAudit, getIncident, saveIncident, transitionIncident } from "@/lib/incidents/repository";
+import { appendAudit, getIncident, persistenceMode, saveIncident, transitionIncident } from "@/lib/incidents/repository";
 import { analyzeIncident } from "@/lib/agents/incident-analyst";
 import { runWebIntelligence, buildQueries } from "@/lib/agents/web-intelligence";
 import { runDocumentIntelligence, mergeDocClaims } from "@/lib/agents/document-intelligence";
 import { verifyClaims, corroborationBySupplier } from "@/lib/agents/verification";
 import { explainDecision } from "@/lib/agents/decision";
 import { rankSuppliers } from "@/lib/suppliers/ranking";
+import { ActivityLedger } from "@/lib/integrations/ledger";
 
 export interface InvestigationStep {
   message: string;
@@ -18,6 +19,9 @@ export async function* runInvestigation(id: string): AsyncGenerator<Investigatio
   const incident = await getIncident(id);
   if (!incident || incident.state !== "INVESTIGATING") return;
 
+  const ledger = new ActivityLedger();
+  incident.apiActivity = [];
+
   const push = async (step: InvestigationStep): Promise<InvestigationStep> => {
     await appendAudit(id, step.message, step.actor);
     return step;
@@ -26,7 +30,7 @@ export async function* runInvestigation(id: string): AsyncGenerator<Investigatio
   yield await push({ message: "Incident context loaded", actor: "SYSTEM", tag: "LIVE" });
   await pace(300);
 
-  const analyst = await analyzeIncident(incident);
+  const analyst = await analyzeIncident(incident, ledger);
   yield await push({ message: `Analyst: ${analyst.summary}`, actor: "AI" });
   await pace(300);
 
@@ -34,7 +38,7 @@ export async function* runInvestigation(id: string): AsyncGenerator<Investigatio
   yield await push({ message: `Searching live web sources… (${planned.length} queries)`, actor: "AI" });
   await pace(400);
 
-  const web = await runWebIntelligence(incident);
+  const web = await runWebIntelligence(incident, ledger);
   incident.externalSources = web.sources;
   const webTag = web.liveCount > 0 ? "LIVE" : "DEMO SEEDED";
   yield await push({
@@ -55,7 +59,7 @@ export async function* runInvestigation(id: string): AsyncGenerator<Investigatio
   yield await push({ message: "Processing 6 supplier documents…", actor: "AI" });
   await pace(400);
 
-  const docs = await runDocumentIntelligence();
+  const docs = await runDocumentIntelligence(ledger);
   mergeDocClaims(incident, docs);
   const docTag = docs.liveCount > 0 ? "LIVE" : "LOCAL";
   yield await push({
@@ -90,7 +94,7 @@ export async function* runInvestigation(id: string): AsyncGenerator<Investigatio
   yield await push({ message: "3 candidate suppliers evaluated", actor: "AI", tag: "LIVE" });
   await pace(350);
 
-  const decision = await explainDecision(incident, ranked, report);
+  const decision = await explainDecision(incident, ranked, report, ledger);
   incident.decision = decision;
   yield await push({
     message: `Recommendation prepared: ${ranked[0].supplier.name} (confidence ${decision.confidence}%)`,
@@ -98,7 +102,39 @@ export async function* runInvestigation(id: string): AsyncGenerator<Investigatio
   });
   await pace(300);
 
+  const persistStart = Date.now();
+  incident.apiActivity = ledger.all();
   await saveIncident(incident);
+  const xanoLive = persistenceMode() === "XANO";
+  ledger.record({
+    sponsor: "Xano",
+    operation: "persist incident + suppliers + claims + audit",
+    method: xanoLive ? "PATCH/POST" : "n/a",
+    endpoint: xanoLive ? `${process.env.XANO_API_BASE ?? ""}/incident,/supplier,/claim,/audit_event` : "in-memory store",
+    request: {
+      incident_key: incident.id,
+      state: incident.state,
+      suppliers: incident.alternativeSuppliers.length,
+      claims: incident.alternativeSuppliers.reduce((a, s) => a + s.claims.length, 0),
+      audit_events: incident.auditLog.length,
+    },
+    response: { mode: persistenceMode(), tables: ["incident", "supplier", "claim", "audit_event"] },
+    mode: xanoLive ? "LIVE" : "LOCAL",
+    status: xanoLive ? "ok" : "fallback",
+    ms: Date.now() - persistStart,
+    note: xanoLive
+      ? "Normalized rows upserted to Xano; audit_event stream is append-only."
+      : "XANO_API_BASE not configured — normalized rows held in the in-memory system of record. Set Xano env to persist.",
+  });
+  incident.apiActivity = ledger.all();
+  await saveIncident(incident);
+  yield await push({
+    message: `Integration ledger: ${ledger.all().length} sponsor API calls recorded (${ledger.all().filter((c) => c.mode === "LIVE").length} live)`,
+    actor: "SYSTEM",
+    tag: "LIVE",
+  });
+  await pace(200);
+
   await transitionIncident(id, "RECOMMENDATION_READY", "AI");
   await transitionIncident(id, "HUMAN_REVIEW", "SYSTEM", "Human review required");
   yield { message: "Human review required", actor: "SYSTEM", tag: "LIVE" };

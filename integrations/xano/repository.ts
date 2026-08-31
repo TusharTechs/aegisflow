@@ -47,6 +47,7 @@ export class XanoRepository implements IAegisRepository {
       evidence_json: {
         externalSources: incident.externalSources ?? null,
         documentsProcessed: incident.documentsProcessed ?? null,
+        apiActivity: incident.apiActivity ?? null,
         decision: incident.decision ?? null,
         generatedDocument: incident.generatedDocument ?? null,
         signature: incident.signature ?? null,
@@ -138,6 +139,7 @@ export class XanoRepository implements IAegisRepository {
         .sort((a, b) => a.timestamp.localeCompare(b.timestamp)),
       externalSources: ev.externalSources ?? undefined,
       documentsProcessed: ev.documentsProcessed ?? undefined,
+      apiActivity: ev.apiActivity ?? undefined,
       decision: ev.decision ?? undefined,
       generatedDocument: ev.generatedDocument ?? undefined,
       signature: ev.signature ?? undefined,

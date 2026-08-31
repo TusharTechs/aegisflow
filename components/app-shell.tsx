@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   ShieldCheck, LayoutDashboard, AlertTriangle, Factory,
-  Network, FileText, UserCheck, ScrollText,
+  Network, FileText, UserCheck, ScrollText, Plug, Building2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -18,7 +18,9 @@ const NAV = [
   { href: "/evidence", label: "Evidence", icon: Network },
   { href: "/documents", label: "Documents", icon: FileText },
   { href: "/approvals", label: "Approvals", icon: UserCheck },
+  { href: "/integrations", label: "Integrations", icon: Plug },
   { href: "/audit", label: "Audit Log", icon: ScrollText },
+  { href: "/business", label: "Business case", icon: Building2 },
 ];
 
 export function AppShell({ children, persistence }: { children: React.ReactNode; persistence?: "XANO" | "LOCAL" }) {

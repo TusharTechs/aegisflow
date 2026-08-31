@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { Incident } from "@/schemas/core";
 import { generateStructured } from "@/lib/ai/gemini";
+import type { ActivityLedger } from "@/lib/integrations/ledger";
 
 const AnalysisSchema = z.object({
   urgency: z.enum(["CRITICAL", "HIGH", "MODERATE"]),
@@ -12,11 +13,13 @@ export interface AnalystOutput {
   source: "gemini" | "fallback";
 }
 
-export async function analyzeIncident(incident: Incident): Promise<AnalystOutput> {
+export async function analyzeIncident(incident: Incident, ledger?: ActivityLedger): Promise<AnalystOutput> {
   const fallbackSummary = `${incident.supplier} disruption puts ${incident.affectedProduct} supply at risk with ${incident.inventoryDays} days of inventory remaining. Immediate alternative sourcing required.`;
   const res = await generateStructured({
     schema: AnalysisSchema,
     fallback: { urgency: "CRITICAL" as const, summary: fallbackSummary },
+    ledger,
+    operation: "incident-analyst",
     prompt:
       `You are the Incident Analyst agent for AegisFlow. Summarize this procurement disruption in one sentence. ` +
       `Use ONLY these facts: supplier=${incident.supplier}; product=${incident.affectedProduct}; ` +

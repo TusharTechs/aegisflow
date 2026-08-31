@@ -1,0 +1,108 @@
+import { AlertTriangle, ArrowRight, FileX2, ShieldX, SearchX } from "lucide-react";
+import { Incident } from "@/schemas/core";
+import { corroborationBySupplier } from "@/lib/agents/verification";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+
+/**
+ * The money shot. When the cheapest alternative carries claims that do not survive
+ * verification, AegisFlow says so — loudly — and refuses to treat them as true.
+ */
+export function EvidenceConflict({ incident }: { incident: Incident }) {
+  const flagged = incident.alternativeSuppliers
+    .map((s) => ({
+      supplier: s,
+      bad: s.claims.filter((c) => c.status === "CONFLICT" || c.status === "UNVERIFIED"),
+    }))
+    .filter((x) => x.bad.length > 0);
+
+  if (flagged.length === 0) return null;
+
+  // Focus on the cheapest flagged supplier — the one a cost-only model would pick.
+  const target = [...flagged].sort((a, b) => a.supplier.costMultiplier - b.supplier.costMultiplier)[0];
+  const cheapest = incident.alternativeSuppliers.every(
+    (s) => s.costMultiplier >= target.supplier.costMultiplier
+  );
+  const corr = corroborationBySupplier(incident)[target.supplier.id] ?? 0;
+
+  const cards = [
+    ...target.bad.map((c) => ({
+      icon: c.status === "CONFLICT" ? FileX2 : ShieldX,
+      status: c.status,
+      claim: c.text,
+      claimSource: c.documentEvidence
+        ? `${c.documentEvidence.documentId} · ${c.documentEvidence.field}`
+        : c.source,
+      finding: c.conflictReason ?? "Could not be independently verified.",
+      confidence: c.confidence,
+    })),
+    {
+      icon: SearchX,
+      status: "NO CORROBORATION" as const,
+      claim: "Independent web corroboration",
+      claimSource: "SerpApi · live supplier query",
+      finding:
+        corr === 0
+          ? "Zero independent sources found. Absence of corroboration is treated as a negative signal."
+          : `${corr} corroborating source(s) — below the threshold to offset the conflicts above.`,
+      confidence: undefined as number | undefined,
+    },
+  ];
+
+  return (
+    <Card className="border-destructive/40 bg-destructive/[0.03]">
+      <CardContent className="space-y-4 pt-6">
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 rounded-full bg-destructive/10 p-2">
+            <AlertTriangle className="h-5 w-5 text-destructive" />
+          </div>
+          <div className="flex-1">
+            <h2 className="text-lg font-semibold tracking-tight text-foreground">
+              Evidence conflict — {target.supplier.name}
+              {cheapest && <span className="text-destructive"> is the cheapest option</span>}
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {cheapest
+                ? `At ${target.supplier.costMultiplier.toFixed(2)}× baseline, a cost-first model would pick this supplier. `
+                : ""}
+              {target.bad.length} of its claims do not survive verification. AegisFlow discovered this from the
+              extracted document text — it was not scripted.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          {cards.map((c, i) => (
+            <div key={i} className="rounded-md border bg-card p-3">
+              <div className="flex items-center justify-between">
+                <c.icon className="h-4 w-4 text-destructive" />
+                <Badge variant="critical">{c.status}</Badge>
+              </div>
+              <p className="mt-2 text-sm font-medium">{c.claim}</p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">Claimed via: {c.claimSource}</p>
+              <p className="mt-2 text-xs text-foreground">{c.finding}</p>
+              {c.confidence !== undefined && (
+                <p className="mt-1 text-[11px] text-muted-foreground">Claim confidence: {c.confidence}%</p>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-destructive/30 bg-card p-3">
+          <p className="text-sm">
+            <span className="font-semibold">AegisFlow does not treat these claims as true.</span>{" "}
+            <span className="text-muted-foreground">
+              Even with the cost weight set to maximum, this supplier cannot win the recommendation.
+            </span>
+          </p>
+          <a
+            href={`/incidents/${incident.id}/why`}
+            className="inline-flex shrink-0 items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            Stress-test the model <ArrowRight className="h-3 w-3" />
+          </a>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}

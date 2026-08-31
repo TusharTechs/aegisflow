@@ -8,7 +8,9 @@ import { InvestigationConsole } from "@/components/incidents/investigation-conso
 import { EvidenceSummary } from "@/components/incidents/evidence-summary";
 import { SupplierComparison } from "@/components/incidents/supplier-comparison";
 import { DecisionPanel } from "@/components/incidents/decision-panel";
+import { EvidenceConflict } from "@/components/incidents/evidence-conflict";
 import { AuditTrail } from "@/components/incidents/audit-trail";
+import { ApiActivitySummary } from "@/components/integrations/api-activity";
 import { ExternalSources } from "@/components/evidence/external-sources";
 import { ProcessedDocuments } from "@/components/documents/processed-documents";
 import { StateStepper } from "@/components/incidents/state-stepper";
@@ -46,14 +48,16 @@ export default async function IncidentPage({ params }: Props) {
         <div className="space-y-6 lg:col-span-2">
           <BusinessImpact incident={incident} />
           <InvestigationConsole incident={incident} />
+          {investigated && <EvidenceConflict incident={incident} />}
+          <SupplierComparison ranked={ranked} showScores={investigated} externalCounts={externalCounts} />
           <EvidenceSummary incident={incident} />
           <ExternalSources incident={incident} />
-          <SupplierComparison ranked={ranked} showScores={investigated} externalCounts={externalCounts} />
           <ProcessedDocuments incident={incident} />
         </div>
 
         <div className="space-y-6">
           <DecisionPanel incident={incident} recommendation={recommendation} />
+          {investigated && <ApiActivitySummary calls={incident.apiActivity ?? []} />}
           <AuditTrail incident={incident} />
         </div>
       </div>

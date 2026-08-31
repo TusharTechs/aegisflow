@@ -3,6 +3,7 @@ import { Incident } from "@/schemas/core";
 import { RankedSupplier } from "@/lib/suppliers/ranking";
 import { VerificationReport } from "@/lib/agents/verification";
 import { generateStructured } from "@/lib/ai/gemini";
+import type { ActivityLedger } from "@/lib/integrations/ledger";
 
 export interface Decision {
   recommendedSupplierId: string;
@@ -22,7 +23,8 @@ const Schema = z.object({
 export async function explainDecision(
   incident: Incident,
   ranked: RankedSupplier[],
-  report: VerificationReport
+  report: VerificationReport,
+  ledger?: ActivityLedger
 ): Promise<Decision> {
   const top = ranked[0];
   const worst = ranked[ranked.length - 1];
@@ -48,6 +50,8 @@ export async function explainDecision(
   const res = await generateStructured({
     schema: Schema,
     fallback,
+    ledger,
+    operation: "decision-agent",
     prompt:
       `You are the Decision agent for AegisFlow. The deterministic risk model ranked ${top.supplier.name} first ` +
       `for incident ${incident.id} (${incident.affectedProduct}). Facts: ${JSON.stringify(facts)}. ` +

@@ -1,6 +1,6 @@
 import { DEMO_INCIDENT } from "@/data/demo/pacific-components";
 import { Incident, WorkflowStateType } from "@/schemas/core";
-import { canTransition } from "@/lib/state/machine";
+import { canTransition, requiresHuman } from "@/lib/state/machine";
 import { XanoRepository } from "@/integrations/xano/repository";
 import { isXanoConfigured } from "@/integrations/xano/client";
 
@@ -90,6 +90,9 @@ export async function transitionIncident(
   if (!incident) throw new Error(`Incident ${id} not found`);
   if (!canTransition(incident.state, to)) {
     throw new Error(`Invalid transition: ${incident.state} -> ${to}`);
+  }
+  if (requiresHuman(to) && actor !== "HUMAN") {
+    throw new Error(`Blocked: ${actor} may not perform the human-only transition -> ${to}`);
   }
   incident.state = to;
   await repository.saveIncident(incident);

@@ -1,6 +1,8 @@
 import { ExternalSource, Incident } from "@/schemas/core";
 import { isSerpConfigured, serpSearch } from "@/integrations/serpapi/client";
 import { seededSourcesFor, Intent } from "@/data/demo/web-sources";
+import type { ActivityLedger } from "@/lib/integrations/ledger";
+import { getDemoFlags } from "@/lib/orchestration/demo-controls";
 
 export interface WebIntelReport {
   sources: ExternalSource[];
@@ -37,39 +39,81 @@ function relevance(query: string, title: string, snippet: string): number {
   return tokens.size ? Math.max(20, Math.round((hits / tokens.size) * 100)) : 50;
 }
 
-export async function runWebIntelligence(incident: Incident): Promise<WebIntelReport> {
+export async function runWebIntelligence(incident: Incident, ledger?: ActivityLedger): Promise<WebIntelReport> {
   const planned = buildQueries(incident);
   const sources: ExternalSource[] = [];
   const observedAt = new Date().toISOString();
+  const serpFailInjected = getDemoFlags().serpapi;
+  const serpEnabled = isSerpConfigured() && !serpFailInjected;
+  const fallbackNote = serpFailInjected
+    ? "SerpApi failure injected via demo control — deterministic per-query seeded corroboration used."
+    : "SERPAPI_API_KEY not configured — deterministic per-query seeded corroboration used. Set the key to run this query live.";
 
   for (const p of planned) {
-    let gotLive = false;
-    if (isSerpConfigured()) {
+    const req = { engine: "google", q: p.query, num: 4 };
+    const start = Date.now();
+    let liveResults: Awaited<ReturnType<typeof serpSearch>> | null = null;
+    let liveError: string | null = null;
+
+    if (serpEnabled) {
       try {
-        const results = await serpSearch(p.query, 4);
-        results.forEach((r, i) => {
-          sources.push({
-            id: `src-${sources.length + 1}`,
-            query: p.query,
-            supplierId: p.supplierId,
-            title: r.title,
-            url: r.url,
-            snippet: r.snippet,
-            engine: "google",
-            observedAt,
-            mode: "LIVE",
-            relevance: Math.max(20, relevance(p.query, r.title, r.snippet) - i * 5),
-          });
-        });
-        gotLive = results.length > 0;
-      } catch {
-        gotLive = false; // graceful per-query fallback; never fabricate
+        liveResults = await serpSearch(p.query, 4);
+      } catch (err) {
+        liveError = err instanceof Error ? err.message : "unknown error";
       }
     }
-    if (!gotLive) {
-      for (const s of seededSourcesFor(p.intent, p.query, p.supplierId)) {
-        sources.push({ ...s, id: `src-${sources.length + 1}`, observedAt });
-      }
+
+    if (liveResults) {
+      liveResults.forEach((r, i) => {
+        sources.push({
+          id: `src-${sources.length + 1}`,
+          query: p.query,
+          supplierId: p.supplierId,
+          title: r.title,
+          url: r.url,
+          snippet: r.snippet,
+          engine: "google",
+          observedAt,
+          mode: "LIVE",
+          relevance: Math.max(20, relevance(p.query, r.title, r.snippet) - i * 5),
+        });
+      });
+      ledger?.record({
+        sponsor: "SerpApi",
+        operation: `web-intelligence · ${p.intent}`,
+        method: "GET",
+        endpoint: "https://serpapi.com/search",
+        request: req,
+        response: { organic_results_count: liveResults.length, organic_results: liveResults },
+        mode: "LIVE",
+        status: "ok",
+        ms: Date.now() - start,
+        note:
+          liveResults.length === 0
+            ? "Zero organic results — recorded as absence of corroboration (a negative signal in the risk model)."
+            : `${liveResults.length} organic result(s) captured.`,
+      });
+    } else {
+      const seeded = seededSourcesFor(p.intent, p.query, p.supplierId);
+      for (const s of seeded) sources.push({ ...s, id: `src-${sources.length + 1}`, observedAt });
+      ledger?.record({
+        sponsor: "SerpApi",
+        operation: `web-intelligence · ${p.intent}`,
+        method: "GET",
+        endpoint: "https://serpapi.com/search",
+        request: req,
+        response: {
+          seeded_results_count: seeded.length,
+          seeded_results: seeded.map((s) => ({ title: s.title, url: s.url, relevance: s.relevance })),
+          ...(liveError ? { live_error: liveError } : {}),
+        },
+        mode: "DEMO SEEDED",
+        status: liveError ? "error" : "fallback",
+        ms: Date.now() - start,
+        note: liveError
+          ? `Live SerpApi call failed (${liveError}); per-query seeded corroboration used for this query only.`
+          : fallbackNote,
+      });
     }
   }
 

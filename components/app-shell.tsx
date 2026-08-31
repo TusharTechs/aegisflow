@@ -23,7 +23,15 @@ const NAV = [
   { href: "/business", label: "Business case", icon: Building2 },
 ];
 
-export function AppShell({ children, persistence }: { children: React.ReactNode; persistence?: "XANO" | "LOCAL" }) {
+export function AppShell({
+  children,
+  persistence,
+  persistenceNote,
+}: {
+  children: React.ReactNode;
+  persistence?: "XANO" | "LOCAL";
+  persistenceNote?: string;
+}) {
   const pathname = usePathname();
 
   return (
@@ -59,6 +67,9 @@ export function AppShell({ children, persistence }: { children: React.ReactNode;
           <div className="mt-1">
             Persistence: <span className="font-medium text-foreground">{persistence ?? "LOCAL"}</span>
           </div>
+          {persistenceNote && (
+            <div className="mt-1 text-[10px] text-warning">Xano fell back: {persistenceNote}</div>
+          )}
         </div>
       </aside>
 

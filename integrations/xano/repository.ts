@@ -29,12 +29,27 @@ type EvidenceJson = Partial<
  * Xano is just "add CRUD" on four tables with no endpoint customization. The
  * demo dataset is tiny, so listing and filtering client-side is fine.
  */
+const pace = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 export class XanoRepository implements IAegisRepository {
   mode = "XANO" as const;
 
+  // Short-lived per-instance cache — the free tier is rate-limited, and one page
+  // render calls rows("supplier") / rows("claim") several times.
+  private cache = new Map<string, { at: number; data: unknown[] }>();
+  private seeding: Promise<void> | null = null;
+
   private async rows<T>(table: string): Promise<T[]> {
+    const hit = this.cache.get(table);
+    if (hit && Date.now() - hit.at < 4000) return hit.data as T[];
     const res = await xano.get(`/${table}`);
-    return (Array.isArray(res) ? res : (res?.items ?? [])) as T[];
+    const data = (Array.isArray(res) ? res : (res?.items ?? [])) as unknown[];
+    this.cache.set(table, { at: Date.now(), data });
+    return data as T[];
+  }
+
+  private invalidate(...tables: string[]) {
+    for (const t of tables) this.cache.delete(t);
   }
 
   async listIncidents(): Promise<Incident[]> {
@@ -45,8 +60,16 @@ export class XanoRepository implements IAegisRepository {
   async getIncident(id: string): Promise<Incident | undefined> {
     let row = (await this.rows<IncidentRow>("incident")).find((r) => r.incident_key === id);
     if (!row && id === DEMO_INCIDENT.id && process.env.XANO_AUTO_SEED !== "false") {
-      await this.seed();
+      // Single-flight: concurrent renders must not both seed.
+      this.seeding ??= this.seed().finally(() => { this.seeding = null; });
+      await this.seeding;
+      this.invalidate("incident", "supplier", "claim", "audit_event");
       row = (await this.rows<IncidentRow>("incident")).find((r) => r.incident_key === id);
+      if (!row) {
+        throw new Error(
+          "Xano seeded but no incident row is readable — check that the `incident` table has an `incident_key` field."
+        );
+      }
     }
     return row ? this.assemble(row) : undefined;
   }
@@ -97,6 +120,7 @@ export class XanoRepository implements IAegisRepository {
         }
       }
     }
+    this.invalidate("supplier", "claim");
   }
 
   async appendAudit(id: string, event: string, actor: "SYSTEM" | "AI" | "HUMAN"): Promise<void> {
@@ -108,6 +132,7 @@ export class XanoRepository implements IAegisRepository {
       event,
       actor,
     });
+    this.invalidate("audit_event");
   }
 
   private async assemble(row: IncidentRow): Promise<Incident> {
@@ -167,29 +192,38 @@ export class XanoRepository implements IAegisRepository {
   }
 
   private async seed(): Promise<void> {
+    // Re-check under the single-flight lock: another request may have just seeded.
+    this.invalidate("incident");
+    if ((await this.rows<IncidentRow>("incident")).some((r) => r.incident_key === DEMO_INCIDENT.id)) return;
+
     const d = DEMO_INCIDENT;
+    // Free-tier rate limit: space the writes out. ~13 writes × 350ms ≈ 5s, one time.
     const incidentRow = await xano.post("/incident", {
       incident_key: d.id, supplier: d.supplier, affected_product: d.affectedProduct, status: d.status,
       inventory_days: d.inventoryDays, revenue_exposure: d.revenueExposure, state: d.state, evidence_json: null,
     });
     for (const s of d.alternativeSuppliers) {
+      await pace(350);
       const sRow = await xano.post("/supplier", {
         incident_id: incidentRow.id, supplier_key: s.id, name: s.name, location: s.location,
         lead_time_days: s.leadTimeDays, cost_multiplier: s.costMultiplier, risk_score: s.riskScore,
         recommendation: false, recommendation_reasoning: "",
       });
       for (const c of s.claims) {
+        await pace(350);
         await xano.post("/claim", {
           supplier_id: sRow.id, claim_key: c.id, text: c.text, source: c.source, ts: c.timestamp,
           confidence: c.confidence, status: c.status, conflict_reason: c.conflictReason ?? "", document_evidence: null,
         });
       }
     }
+    await pace(350);
     await xano.post("/audit_event", {
       incident_id: incidentRow.id,
       event_ts: new Date().toISOString(),
       event: "Incident seeded from AegisFlow demo dataset",
       actor: "SYSTEM",
     });
+    this.invalidate("incident", "supplier", "claim", "audit_event");
   }
 }

@@ -62,18 +62,24 @@ export class InMemoryRepository implements IAegisRepository {
 class ResilientRepository implements IAegisRepository {
   private xano = new XanoRepository();
   private local = new InMemoryRepository();
-  private degraded = false;
+  private hardDegraded = false; // schema/network error — stays down until restart
+  private coolingUntil = 0; // transient 429 — back off briefly, then retry
   private hydrated = new Set<string>();
   private writeQueue: Array<{ kind: "save" | "audit"; run: () => Promise<void> }> = [];
   private draining = false;
   degradedReason?: string;
 
+  private get down(): boolean {
+    return this.hardDegraded || Date.now() < this.coolingUntil;
+  }
+
   get mode(): "LOCAL" | "XANO" {
-    return this.degraded ? "LOCAL" : "XANO";
+    return this.down ? "LOCAL" : "XANO";
   }
 
   reset(): void {
-    this.degraded = false;
+    this.hardDegraded = false;
+    this.coolingUntil = 0;
     this.degradedReason = undefined;
     this.writeQueue = [];
     this.local.reset();
@@ -85,10 +91,14 @@ class ResilientRepository implements IAegisRepository {
   }
 
   private trip(err: unknown) {
-    if (!this.degraded) {
-      this.degraded = true;
-      this.degradedReason = err instanceof Error ? err.message : String(err);
-      console.warn(`[aegisflow] Xano read failed (${this.degradedReason}); serving from in-memory store.`);
+    const msg = err instanceof Error ? err.message : String(err);
+    this.degradedReason = msg;
+    if (/429|rate limit/i.test(msg)) {
+      // Transient — serve the mirror for ~20s, then let reads try Xano again.
+      this.coolingUntil = Date.now() + 20_000;
+    } else if (!this.hardDegraded) {
+      this.hardDegraded = true;
+      console.warn(`[aegisflow] Xano read failed (${msg}); serving from in-memory store.`);
     }
   }
 
@@ -98,7 +108,7 @@ class ResilientRepository implements IAegisRepository {
    * write never blocks a request or degrades read mode — it just retries later.
    */
   private enqueueWrite(kind: "save" | "audit", run: () => Promise<void>) {
-    if (this.degraded) return;
+    if (this.down) return;
     // Coalesce redundant full-incident saves — only the latest state matters.
     if (kind === "save") this.writeQueue = this.writeQueue.filter((t) => t.kind !== "save");
     this.writeQueue.push({ kind, run });
@@ -129,9 +139,16 @@ class ResilientRepository implements IAegisRepository {
   }
 
   async listIncidents(): Promise<Incident[]> {
-    if (this.degraded) return this.local.listIncidents();
+    // Once the demo incident is hydrated, the dashboard reads from the mirror too
+    // — no need to spend rate budget re-listing on every navigation.
+    if (this.down || this.hydrated.has(DEMO_INCIDENT.id)) return this.local.listIncidents();
     try {
-      return await this.xano.listIncidents();
+      const rows = await this.xano.listIncidents();
+      for (const inc of rows) {
+        await this.local.saveIncident(structuredClone(inc));
+        this.hydrated.add(inc.id);
+      }
+      return rows;
     } catch (err) {
       this.trip(err);
       return this.local.listIncidents();
@@ -141,7 +158,7 @@ class ResilientRepository implements IAegisRepository {
   async getIncident(id: string): Promise<Incident | undefined> {
     // Read Xano once per incident, then serve from the mirror — the free tier is
     // rate-limited and every page render would otherwise hit it.
-    if (!this.degraded && !this.hydrated.has(id)) {
+    if (!this.down && !this.hydrated.has(id)) {
       try {
         const fromXano = await this.xano.getIncident(id);
         this.hydrated.add(id);
@@ -181,7 +198,7 @@ export function persistenceMode(): "XANO" | "LOCAL" {
 
 export function persistenceNote(): string | undefined {
   const r = getRepository();
-  return r instanceof ResilientRepository ? r.degradedReason : undefined;
+  return r instanceof ResilientRepository && r.mode === "LOCAL" ? r.degradedReason : undefined;
 }
 
 export async function listIncidents(): Promise<Incident[]> {

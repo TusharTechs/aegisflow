@@ -87,6 +87,15 @@ export async function runWebIntelligence(incident: Incident, ledger?: ActivityLe
           relevance: Math.max(20, relevance(p.query, r.title, r.snippet) - i * 5),
         });
       });
+      // Demo suppliers are fictional, so live Google can't corroborate them by
+      // name. Alongside the live market/news intelligence, attach the curated
+      // supplier-registry records (what a licensed supplier-data feed would
+      // return) so the risk model still has a corroboration signal. Tagged SEEDED.
+      if (p.supplierId) {
+        for (const s of seededSourcesFor(p.intent, p.query, p.supplierId)) {
+          sources.push({ ...s, id: `src-${sources.length + 1}`, observedAt });
+        }
+      }
       ledger?.record({
         sponsor: "SerpApi",
         operation: `web-intelligence · ${p.intent}`,
@@ -100,7 +109,9 @@ export async function runWebIntelligence(incident: Incident, ledger?: ActivityLe
         note:
           liveResults.length === 0
             ? "Zero organic results — recorded as absence of corroboration (a negative signal in the risk model)."
-            : `${liveResults.length} organic result(s) captured.`,
+            : p.supplierId
+              ? `${liveResults.length} live organic result(s) captured; supplier-registry records attached separately (demo suppliers are fictional so live search can't corroborate them by name).`
+              : `${liveResults.length} organic result(s) captured.`,
       });
     } else {
       const seeded = seededSourcesFor(p.intent, p.query, p.supplierId);

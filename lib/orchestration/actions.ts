@@ -162,31 +162,37 @@ export async function signAgreement(id: string, formData: FormData) {
 
   const foxitStart = Date.now();
   const foxitFail = getDemoFlags().foxit;
+  const signerEmail = String(formData.get("signerEmail") ?? "").trim() || undefined;
+  const docUrl = incident.generatedDocument?.url;
   let foxitSessionId: string | undefined;
   const foxitReq = {
-    title: incident.generatedDocument?.title ?? "Emergency Supplier Transition Agreement",
-    signers: [{ name: signerName, role: signerTitle }],
+    folderName: incident.generatedDocument?.title ?? "Emergency Supplier Transition Agreement",
+    sendNow: false,
+    parties: [{ name: signerName, role: signerTitle, email: signerEmail ?? "(not provided)" }],
+    fileUrls: docUrl && /^https?:\/\//.test(docUrl) ? [docUrl] : "(rendered in-app)",
     authorized_by: "HUMAN",
   };
   if (isFoxitConfigured() && !foxitFail) {
     try {
       const session = await createFoxitSigningSession({
-        documentTitle: foxitReq.title,
+        documentTitle: foxitReq.folderName,
         signerName,
+        signerEmail,
+        documentUrl: docUrl,
       });
       foxitSessionId = session.sessionId;
-      await appendAudit(id, `Foxit eSign session created (${foxitSessionId})`, "SYSTEM");
+      await appendAudit(id, `Foxit eSign folder created (${foxitSessionId})`, "SYSTEM");
       recordOnIncident(incident, {
         sponsor: "Foxit",
-        operation: "create eSign signing session",
+        operation: "create eSign signing folder (client_credentials → bearer)",
         method: "POST",
         endpoint: FOXIT_ESIGN_ENDPOINT,
         request: foxitReq,
-        response: { signing_request_id: foxitSessionId, status: "sent" },
+        response: { folderId: foxitSessionId, status: session.status },
         mode: "LIVE",
         status: "ok",
         ms: Date.now() - foxitStart,
-        note: "Session created only after the human authorization guard passed.",
+        note: "Folder created with sendNow:false — prepared only after the human authorization guard passed; the agent never sends it.",
       });
     } catch (err) {
       foxitSessionId = undefined;
@@ -216,7 +222,7 @@ export async function signAgreement(id: string, formData: FormData) {
       ms: Date.now() - foxitStart,
       note: foxitFail
         ? "Foxit failure injected via demo control — in-app human signing ceremony used."
-        : "FOXIT_API_KEY not configured — in-app human signing ceremony is the authorization of record.",
+        : "FOXIT_ESIGN_CLIENT_ID / _SECRET not configured — in-app human signing ceremony is the authorization of record.",
     });
   }
 

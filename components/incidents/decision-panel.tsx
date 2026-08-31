@@ -103,6 +103,7 @@ export function DecisionPanel({ incident, recommendation }: { incident: Incident
                     </div>
                     <input name="signerName" required placeholder="Full name" className={inputCls} />
                     <input name="signerTitle" required placeholder="Title (e.g. VP Procurement)" className={inputCls} />
+                    <input name="signerEmail" type="email" placeholder="Email (optional — for Foxit eSign envelope)" className={inputCls} />
                     <label className="flex items-start gap-2 text-xs text-muted-foreground">
                       <input type="checkbox" name="authorized" required className="mt-0.5 h-4 w-4" />
                       I am authorized to bind {doc.payload.buyer} and understand this signature is irreversible.

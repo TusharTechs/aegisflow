@@ -106,7 +106,7 @@ that exercise the same graceful fallbacks as real outages.
 |---|---|---|
 | SerpApi | Yes — 250 searches/mo, no card | serpapi.com → dashboard |
 | Nutrient DWS | Yes — free plan, no card | dashboard.nutrient.io (Processor API key) |
-| Foxit eSign | Yes — free developer account, no card | developer-api.foxit.com |
+| Foxit eSign | Yes — free eSign account | **foxitesign.foxit.com** (separate from the Document APIs portal) → Account → Integrations/API → API Key + Secret |
 | Xano | Yes — free plan (100k records) | xano.com → see `docs/xano-setup.md` |
 | Doctavian | Request access | doctavian.com / hello@doctavian.com |
 | Gemini | Yes — free tier | aistudio.google.com/apikey |

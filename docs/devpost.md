@@ -93,8 +93,11 @@ document chain is visible in the UI, and the payload carries the evidence summar
 This is the whole product thesis. The agent prepares the document *and* the signing
 request, but a finite-state machine plus a named `assertHumanMaySign(actor, state)`
 guard make it structurally impossible for a non-human actor to create the Foxit
-eSign session or reach the `SIGNED` state. We wrote the tests that prove the AI is
-blocked even when it calls the raw transition directly.
+eSign folder or reach the `SIGNED` state. We wrote the tests that prove the AI is
+blocked even when it calls the raw transition directly. The eSign integration does
+the real OAuth2 `client_credentials` token exchange against
+`na1.foxitesign.foxit.com` and creates the signing folder with `sendNow: false` —
+prepared under the human's authorization, never auto-sent by the agent.
 
 ### Xano — Rebuild a SaaS Tool You Hate
 The tool we hate: the disruption "war-room" spreadsheet every supply-chain team

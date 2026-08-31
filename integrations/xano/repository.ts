@@ -99,34 +99,44 @@ export class XanoRepository implements IAegisRepository {
       },
     });
 
-    const supplierRows = (await this.rows<SupplierRow>("supplier")).filter((r) => r.incident_id === row.id);
-    const claimRows = await this.rows<ClaimRow>("claim");
-    for (const s of incident.alternativeSuppliers) {
-      const existing = supplierRows.find((r) => r.supplier_key === s.id);
-      if (!existing) continue;
-      await xano.patch(`/supplier/${existing.id}`, {
-        risk_score: s.riskScore,
-        recommendation: s.recommendation ?? false,
-        recommendation_reasoning: s.recommendationReasoning ?? "",
-      });
+    // The supplier/claim updates are secondary (the incident row's evidence_json
+    // above already holds the full picture). Pace them for the free tier and stop
+    // quietly if we hit the limit mid-burst — the caller's queue retries later.
+    const step = Number(process.env.XANO_SEED_DELAY_MS ?? 2100);
+    try {
+      const supplierRows = (await this.rows<SupplierRow>("supplier")).filter((r) => r.incident_id === row.id);
+      const claimRows = await this.rows<ClaimRow>("claim");
+      for (const s of incident.alternativeSuppliers) {
+        const existing = supplierRows.find((r) => r.supplier_key === s.id);
+        if (!existing) continue;
+        await pace(step);
+        await xano.patch(`/supplier/${existing.id}`, {
+          risk_score: s.riskScore,
+          recommendation: s.recommendation ?? false,
+          recommendation_reasoning: s.recommendationReasoning ?? "",
+        });
 
-      const supplierClaims = claimRows.filter((r) => r.supplier_id === existing.id);
-      for (const c of s.claims) {
-        const existingClaim = supplierClaims.find((r) => r.claim_key === c.id);
-        const body = {
-          confidence: c.confidence,
-          status: c.status,
-          conflict_reason: c.conflictReason ?? "",
-          document_evidence: c.documentEvidence ?? null,
-        };
-        if (existingClaim) {
-          await xano.patch(`/claim/${existingClaim.id}`, body);
-        } else {
-          await xano.post("/claim", {
-            supplier_id: existing.id, claim_key: c.id, text: c.text, source: c.source, ts: c.timestamp, ...body,
-          });
+        const supplierClaims = claimRows.filter((r) => r.supplier_id === existing.id);
+        for (const c of s.claims) {
+          const existingClaim = supplierClaims.find((r) => r.claim_key === c.id);
+          const body = {
+            confidence: c.confidence,
+            status: c.status,
+            conflict_reason: c.conflictReason ?? "",
+            document_evidence: c.documentEvidence ?? null,
+          };
+          await pace(step);
+          if (existingClaim) {
+            await xano.patch(`/claim/${existingClaim.id}`, body);
+          } else {
+            await xano.post("/claim", {
+              supplier_id: existing.id, claim_key: c.id, text: c.text, source: c.source, ts: c.timestamp, ...body,
+            });
+          }
         }
       }
+    } catch (err) {
+      if (!(err instanceof Error && /429/.test(err.message))) throw err;
     }
     this.invalidate("supplier", "claim");
   }

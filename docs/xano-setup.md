@@ -64,12 +64,25 @@ XANO_AUTO_SEED=true        # auto-creates INC-1042 rows on first load
 Only set `XANO_API_TOKEN` if you switched the endpoints to require authentication
 (you don't need to for the demo).
 
-## 5. Restart and verify
+## 5. Seed once (recommended)
 
-`npm run dev`, open the app. The left-sidebar footer should read
-**Persistence: XANO**, and `/integrations` should show the Xano row as **LIVE** with
-a real `PATCH/POST` call after you run an incident response. The four tables in
-Xano will fill with rows; `audit_event` is append-only.
+The free tier is limited to **10 requests / 20 seconds**, so let the app seed at
+runtime and the first incident load is slow (~30s) — or seed once up front:
 
-To reset: delete all rows in the four tables (or use **Reset demo** in the app header,
-then reload — `XANO_AUTO_SEED` re-creates INC-1042).
+```bash
+node scripts/seed-xano.mjs
+```
+
+Then set `XANO_AUTO_SEED=false` in `.env` so the app never seeds at runtime — it
+just reads INC-1042 once and writes updates best-effort.
+
+## 6. Restart and verify
+
+`npm run dev`, open the app. The sidebar footer should read **Persistence: XANO**,
+and `/integrations` shows Xano as **LIVE** with a real `PATCH/POST` call after an
+incident response.
+
+If Xano hits its rate limit mid-run, the app **falls back to its in-memory mirror**
+for that request (footer shows the reason) and keeps working — nothing breaks.
+
+To reset: delete all rows in the four tables, re-run the seed script.

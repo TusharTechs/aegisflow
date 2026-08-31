@@ -58,7 +58,15 @@ export class XanoRepository implements IAegisRepository {
   }
 
   async getIncident(id: string): Promise<Incident | undefined> {
-    let row = (await this.rows<IncidentRow>("incident")).find((r) => r.incident_key === id);
+    const incidentRows = await this.rows<IncidentRow>("incident");
+    let row = incidentRows.find((r) => r.incident_key === id);
+    // Guard: rows exist but none carry `incident_key` → the table is missing its
+    // fields. Fail fast (don't seed junk rows on every request).
+    if (!row && incidentRows.length > 0 && incidentRows.every((r) => !("incident_key" in r))) {
+      throw new Error(
+        "Xano `incident` table has no `incident_key` field — add the columns from docs/xano-setup.md, then delete the empty rows."
+      );
+    }
     if (!row && id === DEMO_INCIDENT.id && process.env.XANO_AUTO_SEED !== "false") {
       // Single-flight: concurrent renders must not both seed.
       this.seeding ??= this.seed().finally(() => { this.seeding = null; });
@@ -197,27 +205,30 @@ export class XanoRepository implements IAegisRepository {
     if ((await this.rows<IncidentRow>("incident")).some((r) => r.incident_key === DEMO_INCIDENT.id)) return;
 
     const d = DEMO_INCIDENT;
-    // Free-tier rate limit: space the writes out. ~13 writes × 350ms ≈ 5s, one time.
+    // Free-tier rate limit is 10 requests / 20 seconds. Space writes ~2.2s apart
+    // so a one-time runtime seed stays under it (slow, but it only happens once —
+    // prefer `node scripts/seed-xano.mjs` + XANO_AUTO_SEED=false).
+    const step = Number(process.env.XANO_SEED_DELAY_MS ?? 2200);
     const incidentRow = await xano.post("/incident", {
       incident_key: d.id, supplier: d.supplier, affected_product: d.affectedProduct, status: d.status,
       inventory_days: d.inventoryDays, revenue_exposure: d.revenueExposure, state: d.state, evidence_json: null,
     });
     for (const s of d.alternativeSuppliers) {
-      await pace(350);
+      await pace(step);
       const sRow = await xano.post("/supplier", {
         incident_id: incidentRow.id, supplier_key: s.id, name: s.name, location: s.location,
         lead_time_days: s.leadTimeDays, cost_multiplier: s.costMultiplier, risk_score: s.riskScore,
         recommendation: false, recommendation_reasoning: "",
       });
       for (const c of s.claims) {
-        await pace(350);
+        await pace(step);
         await xano.post("/claim", {
           supplier_id: sRow.id, claim_key: c.id, text: c.text, source: c.source, ts: c.timestamp,
           confidence: c.confidence, status: c.status, conflict_reason: c.conflictReason ?? "", document_evidence: null,
         });
       }
     }
-    await pace(350);
+    await pace(step);
     await xano.post("/audit_event", {
       incident_id: incidentRow.id,
       event_ts: new Date().toISOString(),

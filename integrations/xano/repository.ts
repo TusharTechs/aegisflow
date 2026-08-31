@@ -3,13 +3,10 @@ import { DEMO_INCIDENT } from "@/data/demo/pacific-components";
 import { Claim, Incident, Supplier } from "@/schemas/core";
 import { xano } from "./client";
 
-type EvidenceJson = Partial<
-  Pick<Incident, "externalSources" | "documentsProcessed" | "apiActivity" | "decision" | "generatedDocument" | "signature">
-> | null;
-
 interface IncidentRow {
   id: number; incident_key: string; supplier: string; affected_product: string;
-  status: string; inventory_days: number; revenue_exposure: number; state: string; evidence_json?: EvidenceJson;
+  status: string; inventory_days: number; revenue_exposure: number; state: string;
+  evidence_json?: EvidenceJson;
 }
 interface SupplierRow {
   id: number; incident_id: number; supplier_key: string; name: string; location: string;
@@ -22,28 +19,41 @@ interface ClaimRow {
 }
 interface AuditRow { incident_id: number; event_ts: string; event: string; actor: string; }
 
+type EvidenceJson = Partial<
+  Pick<Incident, "externalSources" | "documentsProcessed" | "apiActivity" | "decision" | "generatedDocument" | "signature">
+> | null;
+
+/**
+ * Talks to Xano's *default* auto-generated CRUD endpoints only — GET (list),
+ * GET/{id}, POST, PATCH/{id}. All row filtering happens here in JS, so setting up
+ * Xano is just "add CRUD" on four tables with no endpoint customization. The
+ * demo dataset is tiny, so listing and filtering client-side is fine.
+ */
 export class XanoRepository implements IAegisRepository {
   mode = "XANO" as const;
 
+  private async rows<T>(table: string): Promise<T[]> {
+    const res = await xano.get(`/${table}`);
+    return (Array.isArray(res) ? res : (res?.items ?? [])) as T[];
+  }
+
   async listIncidents(): Promise<Incident[]> {
-    const rows = (await xano.get("/incident")) as IncidentRow[];
+    const rows = await this.rows<IncidentRow>("incident");
     return Promise.all(rows.map((r) => this.assemble(r)));
   }
 
   async getIncident(id: string): Promise<Incident | undefined> {
-    let rows = (await xano.get("/incident", { incident_key: id })) as IncidentRow[];
-    if (rows.length === 0 && id === DEMO_INCIDENT.id && process.env.XANO_AUTO_SEED !== "false") {
+    let row = (await this.rows<IncidentRow>("incident")).find((r) => r.incident_key === id);
+    if (!row && id === DEMO_INCIDENT.id && process.env.XANO_AUTO_SEED !== "false") {
       await this.seed();
-      rows = (await xano.get("/incident", { incident_key: id })) as IncidentRow[];
+      row = (await this.rows<IncidentRow>("incident")).find((r) => r.incident_key === id);
     }
-    if (rows.length === 0) return undefined;
-    return this.assemble(rows[0]);
+    return row ? this.assemble(row) : undefined;
   }
 
   async saveIncident(incident: Incident): Promise<void> {
-    const rows = (await xano.get("/incident", { incident_key: incident.id })) as IncidentRow[];
-    if (rows.length === 0) return;
-    const row = rows[0];
+    const row = (await this.rows<IncidentRow>("incident")).find((r) => r.incident_key === incident.id);
+    if (!row) return;
 
     await xano.patch(`/incident/${row.id}`, {
       state: incident.state,
@@ -58,7 +68,8 @@ export class XanoRepository implements IAegisRepository {
       },
     });
 
-    const supplierRows = (await xano.get("/supplier", { incident_id: String(row.id) })) as SupplierRow[];
+    const supplierRows = (await this.rows<SupplierRow>("supplier")).filter((r) => r.incident_id === row.id);
+    const claimRows = await this.rows<ClaimRow>("claim");
     for (const s of incident.alternativeSuppliers) {
       const existing = supplierRows.find((r) => r.supplier_key === s.id);
       if (!existing) continue;
@@ -68,9 +79,9 @@ export class XanoRepository implements IAegisRepository {
         recommendation_reasoning: s.recommendationReasoning ?? "",
       });
 
-      const claimRows = (await xano.get("/claim", { supplier_id: String(existing.id) })) as ClaimRow[];
+      const supplierClaims = claimRows.filter((r) => r.supplier_id === existing.id);
       for (const c of s.claims) {
-        const existingClaim = claimRows.find((r) => r.claim_key === c.id);
+        const existingClaim = supplierClaims.find((r) => r.claim_key === c.id);
         const body = {
           confidence: c.confidence,
           status: c.status,
@@ -89,10 +100,10 @@ export class XanoRepository implements IAegisRepository {
   }
 
   async appendAudit(id: string, event: string, actor: "SYSTEM" | "AI" | "HUMAN"): Promise<void> {
-    const rows = (await xano.get("/incident", { incident_key: id })) as IncidentRow[];
-    if (rows.length === 0) return;
+    const row = (await this.rows<IncidentRow>("incident")).find((r) => r.incident_key === id);
+    if (!row) return;
     await xano.post("/audit_event", {
-      incident_id: rows[0].id,
+      incident_id: row.id,
       event_ts: new Date().toISOString(),
       event,
       actor,
@@ -100,11 +111,15 @@ export class XanoRepository implements IAegisRepository {
   }
 
   private async assemble(row: IncidentRow): Promise<Incident> {
-    const supplierRows = (await xano.get("/supplier", { incident_id: String(row.id) })) as SupplierRow[];
-    const suppliers: Supplier[] = [];
-    for (const sr of supplierRows) {
-      const claimRows = (await xano.get("/claim", { supplier_id: String(sr.id) })) as ClaimRow[];
-      suppliers.push({
+    const [allSuppliers, allClaims, allAudit] = await Promise.all([
+      this.rows<SupplierRow>("supplier"),
+      this.rows<ClaimRow>("claim"),
+      this.rows<AuditRow>("audit_event"),
+    ]);
+
+    const suppliers: Supplier[] = allSuppliers
+      .filter((sr) => sr.incident_id === row.id)
+      .map((sr) => ({
         id: sr.supplier_key,
         name: sr.name,
         location: sr.location,
@@ -113,20 +128,20 @@ export class XanoRepository implements IAegisRepository {
         riskScore: sr.risk_score,
         recommendation: sr.recommendation,
         recommendationReasoning: sr.recommendation_reasoning || undefined,
-        claims: claimRows.map((cr): Claim => ({
-          id: cr.claim_key,
-          text: cr.text,
-          source: cr.source,
-          timestamp: cr.ts,
-          confidence: cr.confidence,
-          status: cr.status as Claim["status"],
-          conflictReason: cr.conflict_reason || undefined,
-          documentEvidence: cr.document_evidence ?? undefined,
-        })),
-      });
-    }
+        claims: allClaims
+          .filter((cr) => cr.supplier_id === sr.id)
+          .map((cr): Claim => ({
+            id: cr.claim_key,
+            text: cr.text,
+            source: cr.source,
+            timestamp: cr.ts,
+            confidence: cr.confidence,
+            status: cr.status as Claim["status"],
+            conflictReason: cr.conflict_reason || undefined,
+            documentEvidence: cr.document_evidence ?? undefined,
+          })),
+      }));
 
-    const auditRows = (await xano.get("/audit_event", { incident_id: String(row.id) })) as AuditRow[];
     const ev: NonNullable<EvidenceJson> = row.evidence_json ?? {};
 
     return {
@@ -138,7 +153,8 @@ export class XanoRepository implements IAegisRepository {
       revenueExposure: row.revenue_exposure,
       state: row.state as Incident["state"],
       alternativeSuppliers: suppliers,
-      auditLog: auditRows
+      auditLog: allAudit
+        .filter((a) => a.incident_id === row.id)
         .map((a) => ({ timestamp: a.event_ts, event: a.event, actor: a.actor as "SYSTEM" | "AI" | "HUMAN" }))
         .sort((a, b) => a.timestamp.localeCompare(b.timestamp)),
       externalSources: ev.externalSources ?? undefined,

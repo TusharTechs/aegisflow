@@ -64,6 +64,8 @@ class ResilientRepository implements IAegisRepository {
   private local = new InMemoryRepository();
   private degraded = false;
   private hydrated = new Set<string>();
+  private writeQueue: Array<{ kind: "save" | "audit"; run: () => Promise<void> }> = [];
+  private draining = false;
   degradedReason?: string;
 
   get mode(): "LOCAL" | "XANO" {
@@ -74,6 +76,7 @@ class ResilientRepository implements IAegisRepository {
     this.degraded = false;
     this.degradedReason = undefined;
     this.hydrated.clear();
+    this.writeQueue = [];
     this.local.reset();
   }
 
@@ -81,8 +84,44 @@ class ResilientRepository implements IAegisRepository {
     if (!this.degraded) {
       this.degraded = true;
       this.degradedReason = err instanceof Error ? err.message : String(err);
-      console.warn(`[aegisflow] Xano unavailable (${this.degradedReason}); serving from in-memory store.`);
+      console.warn(`[aegisflow] Xano read failed (${this.degradedReason}); serving from in-memory store.`);
     }
+  }
+
+  /**
+   * Xano writes go through a paced background queue (free tier: 10 req / 20s).
+   * The in-memory mirror is authoritative for the session, so a slow or failing
+   * write never blocks a request or degrades read mode — it just retries later.
+   */
+  private enqueueWrite(kind: "save" | "audit", run: () => Promise<void>) {
+    if (this.degraded) return;
+    // Coalesce redundant full-incident saves — only the latest state matters.
+    if (kind === "save") this.writeQueue = this.writeQueue.filter((t) => t.kind !== "save");
+    this.writeQueue.push({ kind, run });
+    void this.drain();
+  }
+
+  private async drain() {
+    if (this.draining) return;
+    this.draining = true;
+    try {
+      while (this.writeQueue.length) {
+        const task = this.writeQueue.shift()!;
+        try {
+          await task.run();
+        } catch (err) {
+          console.warn(`[aegisflow] Xano write deferred (${err instanceof Error ? err.message : "error"}).`);
+        }
+        if (this.writeQueue.length) await new Promise((r) => setTimeout(r, 2100));
+      }
+    } finally {
+      this.draining = false;
+    }
+  }
+
+  /** For status displays: how many Xano writes are still catching up. */
+  pendingWrites(): number {
+    return this.writeQueue.length;
   }
 
   async listIncidents(): Promise<Incident[]> {
@@ -115,22 +154,13 @@ class ResilientRepository implements IAegisRepository {
 
   async saveIncident(incident: Incident): Promise<void> {
     await this.local.saveIncident(incident);
-    if (this.degraded) return;
-    try {
-      await this.xano.saveIncident(incident);
-    } catch (err) {
-      this.trip(err);
-    }
+    const snapshot = structuredClone(incident);
+    this.enqueueWrite("save", () => this.xano.saveIncident(snapshot));
   }
 
   async appendAudit(id: string, event: string, actor: "SYSTEM" | "AI" | "HUMAN"): Promise<void> {
     await this.local.appendAudit(id, event, actor);
-    if (this.degraded) return;
-    try {
-      await this.xano.appendAudit(id, event, actor);
-    } catch (err) {
-      this.trip(err);
-    }
+    this.enqueueWrite("audit", () => this.xano.appendAudit(id, event, actor));
   }
 }
 

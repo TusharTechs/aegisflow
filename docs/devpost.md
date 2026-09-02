@@ -117,12 +117,12 @@ is the only irreversible entry: HUMAN-only, valid from exactly one state.
 that no non-human combination can reach it. A finite-state machine and the named
 `assertHumanMaySign(actor, state)` guard hold the same line independently.
 
-The eSign integration authenticates the way Foxit documents it — OAuth2
-`client_credentials` against `/api/oauth2/access_token`, exchanged for a bearer — and
-creates the signing folder via `POST /api/folders/createfolder` with `sendNow: false`.
-Worth noting for anyone reproducing this: eSign credentials are isolated from the PDF
-Services pair by design. We verified it — sending the developer-api.foxit.com
-credentials to the eSign token endpoint returns `invalid_client`.
+The eSign integration creates the signing folder via
+`POST https://na1.fusion.foxit.com/esign/api/v1/folders/createfolder` with
+`sendNow: false`, authenticated with the unified platform's `client_id` /
+`client_secret` sent as headers. Verified against the live API: it returns a folder in
+`DRAFT` status with a real `folderId`, and emails no one — the agent prepares the
+envelope, a human decides whether it ever goes out.
 
 ### name.com — Domain API Challenge
 A manufacturer that has traded for eight years has a website, and a website means

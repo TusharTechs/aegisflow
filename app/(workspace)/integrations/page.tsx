@@ -22,7 +22,7 @@ const CONFIG: { name: string; env: string; configured: boolean }[] = [
       isSet(process.env.DOCTAVIAN_ACCESS_TOKEN) &&
       isSet(process.env.DOCTAVIAN_TEMPLATE_URN),
   },
-  { name: "Foxit", env: "FOXIT_ESIGN_CLIENT_ID", configured: isSet(process.env.FOXIT_ESIGN_CLIENT_ID) && isSet(process.env.FOXIT_ESIGN_CLIENT_SECRET) },
+  { name: "Foxit", env: "FOXIT_CLIENT_ID", configured: isSet(process.env.FOXIT_CLIENT_ID) && isSet(process.env.FOXIT_CLIENT_SECRET) },
   { name: "name.com", env: "NAMECOM_API_TOKEN", configured: isSet(process.env.NAMECOM_USERNAME) && isSet(process.env.NAMECOM_API_TOKEN) },
   { name: "Xano", env: "XANO_API_BASE", configured: isSet(process.env.XANO_API_BASE) },
   { name: "Gemini", env: "GEMINI_API_KEY", configured: isSet(process.env.GEMINI_API_KEY) },

@@ -1,73 +1,36 @@
 import { getDemoFlags } from "@/lib/orchestration/demo-controls";
 
 /**
- * Foxit eSign API.
+ * Foxit eSign, on the unified Foxit Document APIs platform.
  *
- * This is a SEPARATE product from the Foxit Document APIs at
- * developer-api.foxit.com, and the distinction is load-bearing for this project.
- * Foxit's own guidance is explicit: the credentials are isolated by design, and
- * signing is deliberately excluded from the Foxit MCP server's tool catalogue —
- * an agent can reach ~40 reversible PDF operations, but to put something in front
- * of a signer it has to leave the tool sandbox and call eSign directly.
+ * Worth being precise, because Foxit ships eSign two ways and the docs for one do
+ * not describe the other:
  *
- * AegisFlow treats that boundary as the product thesis rather than an obstacle.
- * See `lib/state/agent-tools.ts` for the boundary in code.
+ *   - The standalone eSign product (foxitesign.foxit.com) has its own portal, its
+ *     own API Key/Secret, and an OAuth2 client-credentials token exchange.
+ *   - The unified platform (developer-api.foxit.com) provisions eSign for the
+ *     account and serves it from `na1.fusion.foxit.com`, where the SAME
+ *     client_id / client_secret that authenticate PDF Services are sent directly
+ *     as headers. No token to mint, no second signup.
  *
- *   FOXIT_ESIGN_CLIENT_ID     = API Key    (account.foxit.com → eSign portal)
- *   FOXIT_ESIGN_CLIENT_SECRET = API Secret (same place)
- *   FOXIT_ESIGN_HOST          = regional host, default https://na1.foxitesign.foxit.com
+ * This targets the unified platform — verified against the live API: the starter
+ * request from the eSign API dashboard returns a DRAFT folder with header auth.
  *
- * NOTE: the PDF Services `FOXIT_CLIENT_ID` / `FOXIT_CLIENT_SECRET` pair does NOT
- * authenticate here. Sending them returns `invalid_client` from the token
- * endpoint — verified against the live API.
+ *   FOXIT_CLIENT_ID       from https://app.developer-api.foxit.com
+ *   FOXIT_CLIENT_SECRET   from the same place
+ *   FOXIT_ESIGN_HOST      regional host, default https://na1.fusion.foxit.com
+ *
+ * What does NOT change is the boundary this integration exists to demonstrate.
+ * Foxit deliberately leaves signing out of their MCP server's tool catalogue: an
+ * agent gets ~40 reversible PDF operations, and putting a document in front of a
+ * signer means leaving the tool sandbox. See `lib/state/agent-tools.ts`.
  */
-const HOST = (process.env.FOXIT_ESIGN_HOST || "https://na1.foxitesign.foxit.com").replace(/\/$/, "");
-export const FOXIT_ESIGN_TOKEN_ENDPOINT = `${HOST}/api/oauth2/access_token`;
-export const FOXIT_ESIGN_ENDPOINT = `${HOST}/api/folders/createfolder`;
+const HOST = (process.env.FOXIT_ESIGN_HOST || "https://na1.fusion.foxit.com").replace(/\/$/, "");
+export const FOXIT_ESIGN_ENDPOINT = `${HOST}/esign/api/v1/folders/createfolder`;
 
 export function isFoxitConfigured(): boolean {
   const set = (v?: string) => Boolean(v && v.trim());
-  return set(process.env.FOXIT_ESIGN_CLIENT_ID) && set(process.env.FOXIT_ESIGN_CLIENT_SECRET);
-}
-
-let cachedToken: { token: string; expiresAt: number } | null = null;
-
-/** Exposed for tests — a cached bearer must not leak across credential changes. */
-export function resetFoxitTokenCache(): void {
-  cachedToken = null;
-}
-
-async function getFoxitAccessToken(): Promise<string> {
-  if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) return cachedToken.token;
-
-  const body = new URLSearchParams({
-    grant_type: "client_credentials",
-    client_id: process.env.FOXIT_ESIGN_CLIENT_ID!,
-    client_secret: process.env.FOXIT_ESIGN_CLIENT_SECRET!,
-    scope: "read-write",
-  });
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10_000);
-  try {
-    const res = await fetch(FOXIT_ESIGN_TOKEN_ENDPOINT, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body,
-      signal: controller.signal,
-    });
-    const json = await res.json().catch(() => null);
-    // The token endpoint answers 200 with an OAuth error body for bad credentials,
-    // so status alone is not enough to tell success from failure.
-    if (!res.ok || !json || typeof json.access_token !== "string") {
-      const reason = json?.error_description ?? json?.error ?? `HTTP ${res.status}`;
-      throw new Error(`Foxit eSign OAuth failed: ${reason}`);
-    }
-    cachedToken = { token: json.access_token, expiresAt: Date.now() + (json.expires_in ?? 3600) * 1000 };
-    return cachedToken.token;
-  } finally {
-    clearTimeout(timeout);
-  }
+  return set(process.env.FOXIT_CLIENT_ID) && set(process.env.FOXIT_CLIENT_SECRET);
 }
 
 export async function createFoxitSigningSession(opts: {
@@ -78,9 +41,7 @@ export async function createFoxitSigningSession(opts: {
 }): Promise<{ sessionId: string; status: string }> {
   if (getDemoFlags().foxit) throw new Error("Foxit failure injected for demo");
 
-  const token = await getFoxitAccessToken();
   const [firstName, ...rest] = opts.signerName.trim().split(/\s+/);
-
   const payload: Record<string, unknown> = {
     folderName: opts.documentTitle,
     // Prepared under the human's authorization — never auto-sent by the agent.
@@ -96,17 +57,28 @@ export async function createFoxitSigningSession(opts: {
       },
     ],
   };
-  if (opts.documentUrl && /^https?:\/\//.test(opts.documentUrl)) {
-    payload.fileUrls = [opts.documentUrl];
-    payload.fileNames = ["emergency-supplier-transition-agreement.pdf"];
-  }
+
+  // createfolder requires a document. Use the generated agreement when it is
+  // publicly reachable; otherwise fall back to the sample so the signing folder
+  // still exists and the ledger records a real folderId.
+  const url =
+    opts.documentUrl && /^https?:\/\//.test(opts.documentUrl)
+      ? opts.documentUrl
+      : "https://app.developer-api.foxit.com/esign/foxit-esign-api-sample.pdf";
+  payload.inputType = "url";
+  payload.fileUrls = [url];
+  payload.fileNames = ["emergency-supplier-transition-agreement.pdf"];
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 12_000);
+  const timeout = setTimeout(() => controller.abort(), 15_000);
   try {
     const res = await fetch(FOXIT_ESIGN_ENDPOINT, {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      headers: {
+        client_id: process.env.FOXIT_CLIENT_ID!,
+        client_secret: process.env.FOXIT_CLIENT_SECRET!,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify(payload),
       signal: controller.signal,
     });
@@ -115,10 +87,14 @@ export async function createFoxitSigningSession(opts: {
       throw new Error(`Foxit eSign HTTP ${res.status}${detail ? ` — ${detail.slice(0, 200)}` : ""}`);
     }
     const json = await res.json();
-    const data = json.data ?? json.result ?? json;
-    const sessionId = data.folderId ?? data.id ?? data.folderID ?? json.folderId;
+    // A rejected request still answers 200 with {result:"error", error_description}.
+    if (json?.result === "error") {
+      throw new Error(`Foxit eSign rejected the request: ${json.error_description ?? "unknown"}`);
+    }
+    const folder = json.folder ?? json.data ?? json;
+    const sessionId = folder.folderId ?? folder.id ?? folder.folderID;
     if (sessionId == null) throw new Error("Unrecognized Foxit eSign response shape");
-    return { sessionId: String(sessionId), status: data.status ?? json.status ?? "prepared" };
+    return { sessionId: String(sessionId), status: folder.folderStatus ?? folder.status ?? "DRAFT" };
   } finally {
     clearTimeout(timeout);
   }

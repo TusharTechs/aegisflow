@@ -51,7 +51,7 @@ The bet, stated up front: the AI does the whole investigation, then stops at a h
 
 **03-conflict.png** *(lead with this one)*
 ```
-Four independent systems disagree with the cheapest supplier: registration, certificate registry, web, domain. Each names the rule that judged it.
+Four independent systems disagree with the cheapest supplier — registration, certificate, web, domain. Each verdict names its rule.
 ```
 
 **04-why.png**

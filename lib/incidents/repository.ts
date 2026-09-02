@@ -79,6 +79,13 @@ class ResilientRepository implements IAegisRepository {
   private readonly hydrationTtlMs = Number(process.env.XANO_HYDRATION_TTL_MS ?? 5000);
   private writeQueue: Array<{ kind: "save" | "audit"; run: () => Promise<void> }> = [];
   private draining: Promise<void> | null = null;
+  /**
+   * Bumped by every incident write. A queued save captures the value at the moment
+   * it was enqueued and skips itself if a newer write has since happened — so a task
+   * that outlives its relevance (frozen mid-queue on serverless, resumed on a later
+   * request) can never put an older snapshot over a newer one.
+   */
+  private saveSeq = 0;
   degradedReason?: string;
 
   private get down(): boolean {
@@ -96,10 +103,25 @@ class ResilientRepository implements IAegisRepository {
     this.writeQueue = [];
     this.local.reset();
     // Keep everything marked hydrated so we serve the fresh local copy instead of
-    // re-pulling stale state, and push the reset state back to Xano in the background.
+    // re-pulling stale state. The Xano write is NOT queued here — see resetAndPersist.
     this.hydrated = new Map([[DEMO_INCIDENT.id, Date.now()]]);
+  }
+
+  /**
+   * Reset, then write the fresh state to Xano directly and wait for it.
+   *
+   * The reset used to enqueue a paced save, which is a time bomb on serverless: the
+   * queue does not finish inside the flush deadline, the function freezes with the
+   * task pending, and a LATER request on the same warm instance resumes the drain —
+   * writing the reset snapshot over a completed investigation. The symptom is an
+   * incident that has verdicts (the seeded ones) but no ledger and no decision, back
+   * in INVESTIGATING, with the run that just succeeded erased.
+   */
+  async resetAndPersist(): Promise<void> {
+    this.reset();
     const fresh = structuredClone(DEMO_INCIDENT);
-    this.enqueueWrite("save", () => this.xano.saveIncident(fresh));
+    await this.local.saveIncident(structuredClone(fresh));
+    await this.saveCore(fresh);
   }
 
   private trip(err: unknown) {
@@ -184,6 +206,8 @@ class ResilientRepository implements IAegisRepository {
     if (this.hardDegraded) return false;
     this.local.saveIncident(incident);
     this.hydrated.set(incident.id, Date.now());
+    // Any save still sitting in the queue is now stale — retire it.
+    this.saveSeq++;
     try {
       await this.xano.saveIncidentCore(incident);
       return true;
@@ -250,7 +274,11 @@ class ResilientRepository implements IAegisRepository {
     // (INVESTIGATING -> HUMAN_REVIEW is not a legal move).
     this.hydrated.set(incident.id, Date.now());
     const snapshot = structuredClone(incident);
-    this.enqueueWrite("save", () => this.xano.saveIncident(snapshot));
+    const seq = ++this.saveSeq;
+    this.enqueueWrite("save", async () => {
+      if (seq !== this.saveSeq) return; // superseded while queued
+      await this.xano.saveIncident(snapshot);
+    });
   }
 
   async appendAudit(id: string, event: string, actor: "SYSTEM" | "AI" | "HUMAN"): Promise<void> {
@@ -312,8 +340,12 @@ export async function transitionIncident(
 }
 
 export async function resetRepository(): Promise<void> {
-  getRepository().reset?.();
-  await flushWrites();
+  const r = getRepository();
+  if (r instanceof ResilientRepository) {
+    await r.resetAndPersist();
+    return;
+  }
+  r.reset?.();
 }
 
 /**

@@ -43,6 +43,16 @@ type EvidenceJson =
        * computed, while the paced writes catch the tables up behind it.
        */
       verdicts?: SupplierVerdict[] | null;
+      /**
+       * The audit stream, carried alongside the evidence.
+       *
+       * `audit_event` remains the append-only table and is still written. But an
+       * investigation emits ~14 events, and one Xano request each exhausts the free
+       * tier's 10-per-20s budget — starving the single write that actually carries
+       * the run. Riding along here makes the whole result durable in ONE request,
+       * with the table filling in behind as budget allows.
+       */
+      auditLog?: Incident["auditLog"] | null;
     })
   | null;
 
@@ -142,6 +152,7 @@ export class XanoRepository implements IAegisRepository {
       status: incident.status,
       evidence_json: {
         verdicts: toVerdicts(incident),
+        auditLog: incident.auditLog ?? null,
         externalSources: incident.externalSources ?? null,
         domainFootprints: incident.domainFootprints ?? null,
         documentsProcessed: incident.documentsProcessed ?? null,
@@ -171,6 +182,7 @@ export class XanoRepository implements IAegisRepository {
       status: incident.status,
       evidence_json: {
         verdicts: toVerdicts(incident),
+        auditLog: incident.auditLog ?? null,
         externalSources: incident.externalSources ?? null,
         domainFootprints: incident.domainFootprints ?? null,
         documentsProcessed: incident.documentsProcessed ?? null,
@@ -289,10 +301,15 @@ export class XanoRepository implements IAegisRepository {
       revenueExposure: row.revenue_exposure,
       state: row.state as Incident["state"],
       alternativeSuppliers: suppliers,
-      auditLog: allAudit
-        .filter((a) => a.incident_id === row.id)
-        .map((a) => ({ timestamp: a.event_ts, event: a.event, actor: a.actor as "SYSTEM" | "AI" | "HUMAN" }))
-        .sort((a, b) => a.timestamp.localeCompare(b.timestamp)),
+      // Prefer the copy written with the evidence; the table is the same stream,
+      // just subject to the rate limit.
+      auditLog:
+        ev.auditLog && ev.auditLog.length
+          ? ev.auditLog
+          : allAudit
+              .filter((a) => a.incident_id === row.id)
+              .map((a) => ({ timestamp: a.event_ts, event: a.event, actor: a.actor as "SYSTEM" | "AI" | "HUMAN" }))
+              .sort((a, b) => a.timestamp.localeCompare(b.timestamp)),
       externalSources: ev.externalSources ?? undefined,
       domainFootprints: ev.domainFootprints ?? undefined,
       documentsProcessed: ev.documentsProcessed ?? undefined,

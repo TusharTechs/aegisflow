@@ -20,7 +20,16 @@ interface ClaimRow {
 interface AuditRow { incident_id: number; event_ts: string; event: string; actor: string; }
 
 type EvidenceJson = Partial<
-  Pick<Incident, "externalSources" | "documentsProcessed" | "apiActivity" | "decision" | "generatedDocument" | "signature">
+  Pick<
+    Incident,
+    | "externalSources"
+    | "domainFootprints"
+    | "documentsProcessed"
+    | "apiActivity"
+    | "decision"
+    | "generatedDocument"
+    | "signature"
+  >
 > | null;
 
 /**
@@ -91,6 +100,7 @@ export class XanoRepository implements IAegisRepository {
       status: incident.status,
       evidence_json: {
         externalSources: incident.externalSources ?? null,
+        domainFootprints: incident.domainFootprints ?? null,
         documentsProcessed: incident.documentsProcessed ?? null,
         apiActivity: incident.apiActivity ?? null,
         decision: incident.decision ?? null,
@@ -201,6 +211,7 @@ export class XanoRepository implements IAegisRepository {
         .map((a) => ({ timestamp: a.event_ts, event: a.event, actor: a.actor as "SYSTEM" | "AI" | "HUMAN" }))
         .sort((a, b) => a.timestamp.localeCompare(b.timestamp)),
       externalSources: ev.externalSources ?? undefined,
+      domainFootprints: ev.domainFootprints ?? undefined,
       documentsProcessed: ev.documentsProcessed ?? undefined,
       apiActivity: ev.apiActivity ?? undefined,
       decision: ev.decision ?? undefined,

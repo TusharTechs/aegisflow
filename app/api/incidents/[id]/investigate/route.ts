@@ -1,6 +1,9 @@
 import { runInvestigation } from "@/lib/orchestration/investigation";
 
 export const dynamic = "force-dynamic";
+// The investigation runs five concurrent SerpApi queries, six extractions and a
+// paced flush to Xano. The platform default (10s) cuts that off mid-run.
+export const maxDuration = 60;
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> | { id: string } }) {
   const { id } = await params;

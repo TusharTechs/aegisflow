@@ -66,7 +66,7 @@ class ResilientRepository implements IAegisRepository {
   private coolingUntil = 0; // transient 429 — back off briefly, then retry
   private hydrated = new Set<string>();
   private writeQueue: Array<{ kind: "save" | "audit"; run: () => Promise<void> }> = [];
-  private draining = false;
+  private draining: Promise<void> | null = null;
   degradedReason?: string;
 
   private get down(): boolean {
@@ -115,21 +115,47 @@ class ResilientRepository implements IAegisRepository {
     void this.drain();
   }
 
-  private async drain() {
-    if (this.draining) return;
-    this.draining = true;
-    try {
-      while (this.writeQueue.length) {
-        const task = this.writeQueue.shift()!;
-        try {
-          await task.run();
-        } catch (err) {
-          console.warn(`[aegisflow] Xano write deferred (${err instanceof Error ? err.message : "error"}).`);
+  private drain(): Promise<void> {
+    if (this.draining) return this.draining;
+    this.draining = (async () => {
+      try {
+        while (this.writeQueue.length) {
+          const task = this.writeQueue.shift()!;
+          try {
+            await task.run();
+          } catch (err) {
+            console.warn(`[aegisflow] Xano write deferred (${err instanceof Error ? err.message : "error"}).`);
+          }
+          if (this.writeQueue.length) await new Promise((r) => setTimeout(r, 2100));
         }
-        if (this.writeQueue.length) await new Promise((r) => setTimeout(r, 2100));
+      } finally {
+        this.draining = null;
       }
-    } finally {
-      this.draining = false;
+    })();
+    return this.draining;
+  }
+
+  /**
+   * Block until queued writes have actually reached Xano, or the deadline passes.
+   *
+   * The queue exists so a rate-limited write never blocks a page render. On a
+   * long-lived server that is free — the drain finishes on its own. On serverless
+   * it is not: the function is frozen the moment the response closes, so anything
+   * still queued is silently lost and the next request reads stale rows.
+   *
+   * Two concessions to that environment. The full-incident `save` carries the
+   * evidence, the ledger and the decision, so it goes first — an audit line
+   * arriving late costs nothing, a missing ledger costs the whole demo. And the
+   * wait is bounded: pacing for the free tier's 10 req/20s can outlast the
+   * function itself, so whatever has not landed by the deadline stays queued and
+   * drains best-effort rather than taking the response down with it.
+   */
+  async flushWrites(deadlineMs = 8000): Promise<void> {
+    const until = Date.now() + deadlineMs;
+    // Saves carry the payload the UI reads back; audits are append-only detail.
+    this.writeQueue.sort((a, b) => (a.kind === b.kind ? 0 : a.kind === "save" ? -1 : 1));
+    while ((this.writeQueue.length || this.draining) && Date.now() < until) {
+      await Promise.race([this.drain(), new Promise((r) => setTimeout(r, until - Date.now()))]);
     }
   }
 
@@ -239,4 +265,15 @@ export async function transitionIncident(
 
 export async function resetRepository(): Promise<void> {
   getRepository().reset?.();
+  await flushWrites();
+}
+
+/**
+ * Ensure queued Xano writes have landed. No-op on the in-memory repository.
+ * Call it at the end of any request that mutated state — on serverless the
+ * process stops executing as soon as the response is sent.
+ */
+export async function flushWrites(deadlineMs?: number): Promise<void> {
+  const r = getRepository();
+  if (r instanceof ResilientRepository) await r.flushWrites(deadlineMs);
 }

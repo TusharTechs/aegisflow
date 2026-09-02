@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { appendAudit, getIncident, resetRepository, saveIncident, transitionIncident } from "@/lib/incidents/repository";
+import { appendAudit, flushWrites, getIncident, resetRepository, saveIncident, transitionIncident } from "@/lib/incidents/repository";
 import { rankSuppliers } from "@/lib/suppliers/ranking";
 import { buildContractPayload } from "@/lib/documents/contract";
 import {
@@ -31,6 +31,7 @@ export async function approve(id: string) {
     if (!incident) return;
     const recommended = incident.alternativeSuppliers.find((s) => s.recommendation)?.name ?? "recommended supplier";
     await transitionIncident(id, "APPROVED", "HUMAN", `Human approved transition to ${recommended}`);
+    await flushWrites();
     revalidatePath(`/incidents/${id}`);
   } catch {}
 }
@@ -43,6 +44,7 @@ export async function resetDemo() {
 export async function requestEvidence(id: string) {
   try {
     await transitionIncident(id, "INVESTIGATING", "HUMAN", "Human requested additional evidence");
+    await flushWrites();
     revalidatePath(`/incidents/${id}`);
   } catch {}
 }
@@ -50,6 +52,7 @@ export async function requestEvidence(id: string) {
 export async function reject(id: string) {
   try {
     await transitionIncident(id, "REJECTED", "HUMAN", "Human rejected the recommendation");
+    await flushWrites();
     revalidatePath(`/incidents/${id}`);
   } catch {}
 }
@@ -154,6 +157,7 @@ export async function prepareDocuments(id: string) {
   await appendAudit(id, `Agreement generated (${mode === "LIVE" ? "Doctavian" : "local render"})`, "AI");
   await transitionIncident(id, "DOCUMENT_PREPARED", "SYSTEM");
   await transitionIncident(id, "SIGNATURE_REQUIRED", "SYSTEM", "Signature requested — human authorization required");
+  await flushWrites();
   safeRevalidate(`/incidents/${id}`);
 }
 
@@ -245,6 +249,7 @@ export async function signAgreement(id: string, formData: FormData) {
     "HUMAN",
     `Agreement signed by ${signerName} (${signerTitle}) — irreversible action authorized by human`
   );
+  await flushWrites();
   safeRevalidate(`/incidents/${id}`);
 }
 

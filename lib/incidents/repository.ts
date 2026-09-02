@@ -124,16 +124,35 @@ class ResilientRepository implements IAegisRepository {
     await this.saveCore(fresh);
   }
 
+  /**
+   * Record a Xano failure and decide how long to stop trying.
+   *
+   * Only a schema problem is permanent — that one needs a human to fix the table,
+   * and retrying just makes noise. Everything else self-heals: a rate limit is a
+   * 20s window, and a network blip or 5xx is worth retrying in a minute. This used
+   * to mark ANY non-429 failure as permanently degraded, which on serverless meant
+   * one transient error poisoned that instance for the rest of its life — so the
+   * same deployment would serve "Xano: CONFIGURED" from most instances and
+   * "fell back this run" from one unlucky one, at random, forever.
+   */
   private trip(err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     this.degradedReason = msg;
-    if (/429|rate limit/i.test(msg)) {
-      // Transient — serve the mirror for ~20s, then let reads try Xano again.
+
+    if (/429|rate limit|too many requests/i.test(msg)) {
       this.coolingUntil = Date.now() + 20_000;
-    } else if (!this.hardDegraded) {
-      this.hardDegraded = true;
-      console.warn(`[aegisflow] Xano read failed (${msg}); serving from in-memory store.`);
+      return;
     }
+    if (/no `?incident_key`?|missing|field/i.test(msg)) {
+      if (!this.hardDegraded) {
+        this.hardDegraded = true;
+        console.warn(`[aegisflow] Xano schema problem (${msg}); serving from the in-memory store.`);
+      }
+      return;
+    }
+    // Transient infrastructure — back off, then try again.
+    this.coolingUntil = Date.now() + 60_000;
+    console.warn(`[aegisflow] Xano read failed (${msg}); retrying in 60s.`);
   }
 
   /**

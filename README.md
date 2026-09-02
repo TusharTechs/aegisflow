@@ -136,7 +136,7 @@ the application.
 - **The guard:** [`state/guards.ts:18`](lib/state/guards.ts#L18) `assertHumanMaySign(actor, state)` — throws for any non-`HUMAN` actor or wrong state
 - **The state machine:** [`state/machine.ts:21`](lib/state/machine.ts#L21) `HUMAN_ONLY_TARGETS = [APPROVED, REJECTED, SIGNED]`, enforced in [`repository.ts:232`](lib/incidents/repository.ts#L232)
 - **The call:** [`foxit/client.ts`](integrations/foxit/client.ts) — OAuth2 `client_credentials` against `/api/oauth2/access_token`, then `POST /api/folders/createfolder` with `sendNow: false`, reached only after both gates pass
-- **Credentials are isolated by design:** eSign has its own host and its own API Key/Secret from `account.foxit.com`. The PDF Services pair from `developer-api.foxit.com` does **not** authenticate here — we verified it: the token endpoint answers `invalid_client`
+- **Credentials are isolated by design:** eSign has its own host and its own API Key/Secret — sign up at `account.foxit.com/site/sign-up`, then **Settings → API tab**. The PDF Services pair from `developer-api.foxit.com` does **not** authenticate here — we verified it: the token endpoint answers `invalid_client`
 - **Proof at runtime:** [`agent-tools.test.ts`](tests/agent-tools.test.ts) enumerates *every* actor × *every* workflow state and asserts no non-human combination can reach an irreversible tool; [`guards.test.ts`](tests/guards.test.ts) drives the pipeline to `SIGNATURE_REQUIRED` then asserts `transitionIncident(id, "SIGNED", "AI")` **rejects**
 
 ## name.com — Domain API Challenge

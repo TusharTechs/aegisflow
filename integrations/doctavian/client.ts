@@ -30,9 +30,14 @@ export const DOCTAVIAN_GENERATE_ENDPOINT = `${BASE}/v1/documents/document/genera
 export const DOCTAVIAN_DATA_UPLOAD_ENDPOINT = `${BASE}/v1/documents/data/upload`;
 export const DOCTAVIAN_DOWNLOAD_ENDPOINT = `${BASE}/v1/documents/document`;
 
+/** A whitespace-only value is a placeholder, not a credential. */
+const isSet = (v?: string) => Boolean(v && v.trim());
+
 export function isDoctavianConfigured(): boolean {
-  return Boolean(
-    process.env.DOCTAVIAN_API_KEY && process.env.DOCTAVIAN_ACCESS_TOKEN && process.env.DOCTAVIAN_TEMPLATE_URN
+  return (
+    isSet(process.env.DOCTAVIAN_API_KEY) &&
+    isSet(process.env.DOCTAVIAN_ACCESS_TOKEN) &&
+    isSet(process.env.DOCTAVIAN_TEMPLATE_URN)
   );
 }
 

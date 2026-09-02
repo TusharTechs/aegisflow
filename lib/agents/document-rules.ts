@@ -53,6 +53,30 @@ export interface VerificationRule {
 
 const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
 
+/**
+ * Field names are read out of a PDF, so their exact spelling is not stable.
+ * Nutrient DWS drops underscores depending on how the glyphs are spaced in the
+ * source document — the same run can yield `REGISTRY_MATCH` on one certificate and
+ * `VALIDUNTIL`, `CERTNUMBER`, `ABOUTPAGECLAIM` on another. Comparing canonical
+ * forms makes a rule independent of which extractor produced the text, which is
+ * the whole point of having the extractor be swappable.
+ */
+const canonical = (key: string) => key.toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+/** Read a field by any of its accepted spellings. */
+export function readField(fields: ExtractedFields, ...names: string[]): string | undefined {
+  const index = new Map<string, string>();
+  for (const [key, value] of Object.entries(fields)) {
+    const c = canonical(key);
+    if (!index.has(c)) index.set(c, value);
+  }
+  for (const name of names) {
+    const hit = index.get(canonical(name));
+    if (hit !== undefined && hit.trim() !== "") return hit.trim();
+  }
+  return undefined;
+}
+
 /** First 4-digit year in a field value, if there is one. */
 export function yearOf(value?: string): number | undefined {
   const m = value?.match(/\b(?:19|20)\d{2}\b/);
@@ -101,17 +125,19 @@ const entityAgeVsRegistry: VerificationRule = {
     "Compares the founding year a supplier claims publicly against the FORMED date on its business registration.",
   appliesTo: (type) => /business registration|business licen[cs]e|trade registry/i.test(type),
   run: (f, ctx) => {
-    const formedYear = yearOf(f.FORMED);
+    const formed = readField(f, "FORMED", "FORMATION_DATE", "INCORPORATED");
+    const formedYear = yearOf(formed);
     if (formedYear === undefined) return [];
 
     const out: DerivedClaim[] = [];
-    const statusActive = /\bactive\b/i.test(f.STATUS ?? "");
+    const status = readField(f, "STATUS");
+    const statusActive = /\bactive\b/i.test(status ?? "");
 
     out.push({
       supplierId: ctx.supplierId,
       subject: "entity-registered",
       text: `Registered entity since ${formedYear}`,
-      confidence: clamp(95 + (f.REGISTRY ? 2 : 0)),
+      confidence: clamp(95 + (readField(f, "REGISTRY") ? 2 : 0)),
       status: "VERIFIED",
       field: "FORMED",
       rule: "entity-age-vs-registry",
@@ -123,13 +149,13 @@ const entityAgeVsRegistry: VerificationRule = {
       text: statusActive ? "Active business registration status" : "Business registration is not active",
       confidence: clamp(statusActive ? 95 : 40),
       status: statusActive ? "VERIFIED" : "UNVERIFIED",
-      conflictReason: statusActive ? undefined : `Registration STATUS reads "${f.STATUS ?? "unknown"}".`,
+      conflictReason: statusActive ? undefined : `Registration STATUS reads "${status ?? "unknown"}".`,
       field: "STATUS",
       rule: "entity-age-vs-registry",
     });
 
     // The supplier's own public founding claim, when the extraction captured it.
-    const publicClaim = f.ABOUT_PAGE_CLAIM ?? f.PUBLIC_CLAIM ?? f.WEBSITE_CLAIM;
+    const publicClaim = readField(f, "ABOUT_PAGE_CLAIM", "PUBLIC_CLAIM", "WEBSITE_CLAIM");
     const claimedYear = yearOf(publicClaim);
     if (claimedYear !== undefined) {
       const gap = Math.abs(formedYear - claimedYear);
@@ -142,7 +168,7 @@ const entityAgeVsRegistry: VerificationRule = {
         status: agrees ? "VERIFIED" : "CONFLICT",
         conflictReason: agrees
           ? undefined
-          : `Supplier materials claim ${claimedYear}; the business registration shows FORMED ${f.FORMED}. ` +
+          : `Supplier materials claim ${claimedYear}; the business registration shows FORMED ${formed}. ` +
             `${gap} year${gap === 1 ? "" : "s"} of operating history cannot be substantiated.`,
         field: "FORMED",
         rule: "entity-age-vs-registry",
@@ -166,7 +192,9 @@ const certificateRegistryMatch: VerificationRule = {
     "Verifies an ISO 9001 certificate against its registry match, the accreditation status of its issuer, and its expiry date.",
   appliesTo: (type) => /certificat|iso\s*9001/i.test(type),
   run: (f, ctx) => {
-    const isIso9001 = /\biso\s*9001\b/i.test(`${f.DOC_TYPE ?? ""} ${f.SCOPE ?? ""}`);
+    const isIso9001 = /\biso\s*9001\b/i.test(
+      `${readField(f, "DOC_TYPE") ?? ""} ${readField(f, "SCOPE") ?? ""}`
+    );
     if (!isIso9001) return [];
 
     let confidence = 90;
@@ -174,9 +202,9 @@ const certificateRegistryMatch: VerificationRule = {
     const failures: string[] = [];
     let anchorField = "CERT_NUMBER";
 
-    if (f.CERT_NUMBER) confidence += 3;
+    if (readField(f, "CERT_NUMBER", "CERTIFICATE_NUMBER")) confidence += 3;
 
-    const registryMatch = f.REGISTRY_MATCH;
+    const registryMatch = readField(f, "REGISTRY_MATCH", "REGISTRY_LOOKUP");
     if (registryMatch !== undefined && NEGATIVE_REGISTRY.test(registryMatch)) {
       status = "UNVERIFIED";
       confidence = confidence * 0.6;
@@ -184,7 +212,7 @@ const certificateRegistryMatch: VerificationRule = {
       failures.push(`the certificate registry returned REGISTRY_MATCH: ${registryMatch.trim()}`);
     }
 
-    const issuer = (f.ISSUER ?? "").trim();
+    const issuer = (readField(f, "ISSUER", "ISSUING_BODY") ?? "").trim();
     if (issuer) {
       if (ACCREDITED_ISSUER.test(issuer)) {
         confidence += 5;
@@ -196,12 +224,13 @@ const certificateRegistryMatch: VerificationRule = {
       }
     }
 
-    const validUntil = f.VALID_UNTIL ? Date.parse(f.VALID_UNTIL) : NaN;
+    const validUntilRaw = readField(f, "VALID_UNTIL", "EXPIRES", "EXPIRY");
+    const validUntil = validUntilRaw ? Date.parse(validUntilRaw) : NaN;
     if (!Number.isNaN(validUntil) && validUntil < Date.now()) {
       status = "UNVERIFIED";
       confidence = confidence * 0.7;
       anchorField = "VALID_UNTIL";
-      failures.push(`the certificate expired on ${f.VALID_UNTIL}`);
+      failures.push(`the certificate expired on ${validUntilRaw}`);
     }
 
     return [
@@ -233,7 +262,7 @@ const productEquivalence: VerificationRule = {
     "Confirms a datasheet's stated equivalence names the component the incident is actually about.",
   appliesTo: (type) => /product specification|datasheet|technical spec/i.test(type),
   run: (f, ctx) => {
-    const equivalent = f.EQUIVALENT_TO;
+    const equivalent = readField(f, "EQUIVALENT_TO", "EQUIVALENT", "CROSS_REFERENCE");
     if (!equivalent || !ctx.affectedProduct) return [];
 
     const matches = norm(equivalent).includes(norm(ctx.affectedProduct));

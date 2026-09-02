@@ -31,7 +31,8 @@ export interface DomainSearchResult {
 }
 
 export function isNameComConfigured(): boolean {
-  return Boolean(process.env.NAMECOM_USERNAME && process.env.NAMECOM_API_TOKEN);
+  const set = (v?: string) => Boolean(v && v.trim());
+  return set(process.env.NAMECOM_USERNAME) && set(process.env.NAMECOM_API_TOKEN);
 }
 
 function authHeader(): string {

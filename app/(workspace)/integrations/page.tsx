@@ -6,22 +6,26 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const dynamic = "force-dynamic";
 
+/** A blank or whitespace-only env var is a placeholder, not a credential. */
+const isSet = (v?: string) => Boolean(v && v.trim());
+
 const CONFIG: { name: string; env: string; configured: boolean }[] = [
-  { name: "SerpApi", env: "SERPAPI_API_KEY", configured: Boolean(process.env.SERPAPI_API_KEY) },
-  { name: "Nutrient", env: "NUTRIENT_API_KEY", configured: Boolean(process.env.NUTRIENT_API_KEY) },
+  { name: "SerpApi", env: "SERPAPI_API_KEY", configured: isSet(process.env.SERPAPI_API_KEY) },
+  { name: "Nutrient", env: "NUTRIENT_API_KEY", configured: isSet(process.env.NUTRIENT_API_KEY) },
   {
     name: "Doctavian",
     env: "DOCTAVIAN_API_KEY + _ACCESS_TOKEN + _TEMPLATE_URN",
     // All three are required: the gateway enforces X-Api-Key AND an OAuth bearer,
     // and generation renders against an uploaded template addressed by URN.
-    configured: Boolean(
-      process.env.DOCTAVIAN_API_KEY && process.env.DOCTAVIAN_ACCESS_TOKEN && process.env.DOCTAVIAN_TEMPLATE_URN
-    ),
+    configured:
+      isSet(process.env.DOCTAVIAN_API_KEY) &&
+      isSet(process.env.DOCTAVIAN_ACCESS_TOKEN) &&
+      isSet(process.env.DOCTAVIAN_TEMPLATE_URN),
   },
-  { name: "Foxit", env: "FOXIT_ESIGN_CLIENT_ID", configured: Boolean(process.env.FOXIT_ESIGN_CLIENT_ID && process.env.FOXIT_ESIGN_CLIENT_SECRET) },
-  { name: "name.com", env: "NAMECOM_API_TOKEN", configured: Boolean(process.env.NAMECOM_USERNAME && process.env.NAMECOM_API_TOKEN) },
-  { name: "Xano", env: "XANO_API_BASE", configured: Boolean(process.env.XANO_API_BASE) },
-  { name: "Gemini", env: "GEMINI_API_KEY", configured: Boolean(process.env.GEMINI_API_KEY) },
+  { name: "Foxit", env: "FOXIT_ESIGN_CLIENT_ID", configured: isSet(process.env.FOXIT_ESIGN_CLIENT_ID) && isSet(process.env.FOXIT_ESIGN_CLIENT_SECRET) },
+  { name: "name.com", env: "NAMECOM_API_TOKEN", configured: isSet(process.env.NAMECOM_USERNAME) && isSet(process.env.NAMECOM_API_TOKEN) },
+  { name: "Xano", env: "XANO_API_BASE", configured: isSet(process.env.XANO_API_BASE) },
+  { name: "Gemini", env: "GEMINI_API_KEY", configured: isSet(process.env.GEMINI_API_KEY) },
 ];
 
 export default async function IntegrationsPage() {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyClaim, deriveClaims, yearOf, VERIFICATION_RULES } from "@/lib/agents/document-rules";
+import { classifyClaim, deriveClaims, readField, yearOf, VERIFICATION_RULES } from "@/lib/agents/document-rules";
 
 /**
  * The point of these tests is that the verdicts are COMPUTED, not scripted.
@@ -156,5 +156,67 @@ describe("yearOf", () => {
     expect(yearOf("Established 2018")).toBe(2018);
     expect(yearOf("no year here")).toBeUndefined();
     expect(yearOf(undefined)).toBeUndefined();
+  });
+});
+
+/**
+ * Regression: the same rules must produce the same verdicts whichever extractor
+ * read the PDF.
+ *
+ * Nutrient DWS drops underscores from field names depending on glyph spacing in
+ * the source document — and it does so inconsistently, keeping `REGISTRY_MATCH` on
+ * one certificate while stripping `VALIDUNTIL` and `CERTNUMBER` on the same page.
+ * The fixtures below are the verbatim `plainText` DWS returned for these PDFs.
+ * Before `readField` matched canonically, going LIVE on Nutrient silently dropped
+ * the founding-year conflict — the demo's whole point — because the rule was
+ * looking for `ABOUT_PAGE_CLAIM` and the extractor had produced `ABOUTPAGECLAIM`.
+ */
+describe("extractor-independence (real Nutrient DWS output)", () => {
+  const nutrientRegistration = {
+    DOCTYPE: "Business Registration",
+    ENTITY: "Shenzhen Rapid Parts Ltd",
+    REGISTRY: "Shenzhen AMR",
+    REGNUMBER: "91440300MA5H 2X",
+    FORMED: "2021-06-08",
+    STATUS: "Active",
+    ABOUTPAGECLAIM: "Established 2018",
+  };
+
+  const nutrientCertificate = {
+    DOC_TYPE: "ISO 9001 Certificate (copy)",
+    HOLDER: "Shenzhen Rapid Parts Ltd",
+    CERTNUMBER: "SR-2024-114",
+    ISSUER: "Unaccredited certification body",
+    ISSUED: "2024-11-01",
+    VALIDUNTIL: "2027-10-31",
+    REGISTRY_MATCH: "NOT FOUND",
+  };
+
+  it("still finds the founding-year conflict when DWS strips the underscores", () => {
+    const age = deriveClaims(REGISTRATION, nutrientRegistration, ctx).find((c) => c.subject === "entity-age")!;
+    expect(age.status).toBe("CONFLICT");
+    expect(age.conflictReason).toContain("2018");
+    expect(age.conflictReason).toContain("2021");
+  });
+
+  it("still withholds the certificate when DWS strips the underscores", () => {
+    const iso = deriveClaims(CERTIFICATE, nutrientCertificate, ctx).find((c) => c.subject === "iso-9001")!;
+    expect(iso.status).toBe("UNVERIFIED");
+    expect(iso.conflictReason).toMatch(/REGISTRY_MATCH|registry/i);
+  });
+
+  it("reaches identical verdicts from Nutrient text and local text", () => {
+    const viaNutrient = deriveClaims(REGISTRATION, nutrientRegistration, ctx);
+    const viaLocal = deriveClaims(REGISTRATION, shenzhenRegistration, ctx);
+    expect(viaNutrient.map((c) => [c.subject, c.status, c.confidence])).toEqual(
+      viaLocal.map((c) => [c.subject, c.status, c.confidence])
+    );
+  });
+
+  it("reads a field under any spelling the extractor produces", () => {
+    for (const key of ["ABOUT_PAGE_CLAIM", "ABOUTPAGECLAIM", "about page claim"]) {
+      expect(readField({ [key]: "Established 2018" }, "ABOUT_PAGE_CLAIM")).toBe("Established 2018");
+    }
+    expect(readField({ FORMED: "   " }, "FORMED")).toBeUndefined();
   });
 });

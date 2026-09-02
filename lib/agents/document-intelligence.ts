@@ -31,11 +31,21 @@ export interface DocIntelReport {
   liveCount: number;
 }
 
+/**
+ * Pull `KEY: value` pairs out of extracted text.
+ *
+ * Tolerant on purpose: Nutrient DWS returns CRLF line endings, pads values with
+ * runs of spaces, and drops underscores from key names inconsistently depending on
+ * glyph spacing. Keys are kept as extracted — `readField` in document-rules.ts
+ * matches them canonically, so a rule never depends on which extractor ran.
+ */
 function parseFields(text: string): Record<string, string> {
   const fields: Record<string, string> = {};
-  for (const line of text.split("\n")) {
-    const m = line.match(/^([A-Z][A-Z_0-9]+):\s*(.+)$/);
-    if (m) fields[m[1]] = m[2].trim();
+  for (const line of text.split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Z][A-Z_0-9]*)\s*:\s*(.+?)\s*$/);
+    if (!m) continue;
+    const value = m[2].replace(/\s{2,}/g, " ").trim();
+    if (value && !(m[1] in fields)) fields[m[1]] = value;
   }
   return fields;
 }

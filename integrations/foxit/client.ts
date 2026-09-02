@@ -26,7 +26,8 @@ export const FOXIT_ESIGN_TOKEN_ENDPOINT = `${HOST}/api/oauth2/access_token`;
 export const FOXIT_ESIGN_ENDPOINT = `${HOST}/api/folders/createfolder`;
 
 export function isFoxitConfigured(): boolean {
-  return Boolean(process.env.FOXIT_ESIGN_CLIENT_ID && process.env.FOXIT_ESIGN_CLIENT_SECRET);
+  const set = (v?: string) => Boolean(v && v.trim());
+  return set(process.env.FOXIT_ESIGN_CLIENT_ID) && set(process.env.FOXIT_ESIGN_CLIENT_SECRET);
 }
 
 let cachedToken: { token: string; expiresAt: number } | null = null;

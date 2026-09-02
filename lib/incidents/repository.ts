@@ -76,7 +76,7 @@ class ResilientRepository implements IAegisRepository {
    * read on every render.
    */
   private hydrated = new Map<string, number>();
-  private readonly hydrationTtlMs = Number(process.env.XANO_HYDRATION_TTL_MS ?? 5000);
+  private readonly hydrationTtlMs = Number(process.env.XANO_HYDRATION_TTL_MS ?? 15000);
   private writeQueue: Array<{ kind: "save" | "audit"; run: () => Promise<void> }> = [];
   private draining: Promise<void> | null = null;
   /**
@@ -143,7 +143,7 @@ class ResilientRepository implements IAegisRepository {
       this.coolingUntil = Date.now() + 20_000;
       return;
     }
-    if (/no `?incident_key`?|missing|field/i.test(msg)) {
+    if (/has no `?incident_key`?/i.test(msg)) {
       if (!this.hardDegraded) {
         this.hardDegraded = true;
         console.warn(`[aegisflow] Xano schema problem (${msg}); serving from the in-memory store.`);

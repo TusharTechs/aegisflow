@@ -188,7 +188,7 @@ grep -rn "REGISTRY_MATCH\|ABOUT_PAGE_CLAIM\|appliesTo" lib/agents/document-rules
 
 ```bash
 npm install && node scripts/generate-pdfs.mjs && npm run dev   # runs fully offline with zero keys
-npm test                                                        # 57 passing
+npm test                                                        # 61 passing
 ```
 
 ---
@@ -321,7 +321,7 @@ npm install
 node scripts/generate-pdfs.mjs      # the six evidence PDFs
 cp .env.example .env.local           # optional — add sponsor keys to go LIVE
 npm run dev                          # http://localhost:3000
-npm test                             # 57 passing
+npm test                             # 61 passing
 ```
 
 With no keys the full workflow runs on honest fallbacks and every screen stays

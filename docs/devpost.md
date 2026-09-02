@@ -67,7 +67,7 @@ Manufacturing, on delivery evidence and clean verification.
 
 - **Progress:** end-to-end working app — six agents, SSE-streamed investigation,
   transparent risk engine with live re-weighting, human-in-the-loop state machine,
-  six real sponsor integrations each with an honest fallback, 57 passing tests,
+  six real sponsor integrations each with an honest fallback, 61 passing tests,
   `next build` green.
 - **Concept:** a real, board-level problem (supply-chain disruption response) with a
   sharp wedge — the analyst who lives in the disruption "war-room" spreadsheet.

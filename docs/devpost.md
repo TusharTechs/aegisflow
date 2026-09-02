@@ -97,11 +97,16 @@ document chain is visible in the UI, and the payload carries the evidence summar
 (verified count, conflict count, confidence) into the contract itself.
 
 We use Doctavian's actual document-request model rather than treating it as string
-interpolation: the decision payload is uploaded as the data source
-(`POST /v1/documents/data/upload`), then rendered against the stored template
-(`POST /v1/documents/document/generate`), then fetched by document URN. Both
-credentials the gateway requires are wired — the `X-Api-Key` subscription key and the
-Microsoft OAuth2 bearer.
+interpolation: the template and the decision payload are uploaded as files, generation
+ties the two URNs together, and the result is fetched by document URN. Both credentials
+the gateway requires are wired — the `X-Api-Key` subscription key and the Microsoft
+OAuth2 bearer.
+
+The template itself is generated in code from Doctavian's Element syntax, which let us
+put the product thesis into the artefact: an `mdoc:paragraph` reveals an
+unverified-claims notice **only** when the run recorded a conflict. Same template,
+`conflicts: 1` prints the notice, `conflicts: 0` hides it — verified against the live
+API. The agreement discloses its own evidence position on its face.
 
 ### Foxit — Your Agent Shouldn't Sign That
 This is the whole product thesis, and Foxit drew the line first: their MCP server

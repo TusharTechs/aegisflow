@@ -1,5 +1,6 @@
 import { getDemoFlags } from "@/lib/orchestration/demo-controls";
 import type { ContractPayload } from "@/schemas/core";
+import { AGREEMENT_TEMPLATE_FILENAME, buildAgreementTemplateDocx } from "@/lib/documents/doctavian-template";
 
 /**
  * Doctavian Document Generation API.
@@ -22,23 +23,24 @@ import type { ContractPayload } from "@/schemas/core";
  *   DOCTAVIAN_API_BASE       https://demo.api.doctavian.com
  *   DOCTAVIAN_API_KEY        subscription key
  *   DOCTAVIAN_ACCESS_TOKEN   Microsoft OAuth bearer
- *   DOCTAVIAN_TEMPLATE_URN   URN of the uploaded agreement template
+ *
+ * There is no template URN to configure: the demo environment consumes an
+ * uploaded template on first use, so one is built and uploaded per generation.
  */
 const BASE = (process.env.DOCTAVIAN_API_BASE || "https://demo.api.doctavian.com").replace(/\/$/, "");
 
 export const DOCTAVIAN_GENERATE_ENDPOINT = `${BASE}/v1/documents/document/generate`;
 export const DOCTAVIAN_DATA_UPLOAD_ENDPOINT = `${BASE}/v1/documents/data/upload`;
+export const DOCTAVIAN_TEMPLATE_UPLOAD_ENDPOINT = `${BASE}/v1/documents/template/upload`;
 export const DOCTAVIAN_DOWNLOAD_ENDPOINT = `${BASE}/v1/documents/document`;
 
 /** A whitespace-only value is a placeholder, not a credential. */
 const isSet = (v?: string) => Boolean(v && v.trim());
 
 export function isDoctavianConfigured(): boolean {
-  return (
-    isSet(process.env.DOCTAVIAN_API_KEY) &&
-    isSet(process.env.DOCTAVIAN_ACCESS_TOKEN) &&
-    isSet(process.env.DOCTAVIAN_TEMPLATE_URN)
-  );
+  // No template URN needed: the demo environment consumes an uploaded template on
+  // first use, so one is built and uploaded per generation.
+  return isSet(process.env.DOCTAVIAN_API_KEY) && isSet(process.env.DOCTAVIAN_ACCESS_TOKEN);
 }
 
 function headers(extra: Record<string, string> = {}): Record<string, string> {
@@ -63,10 +65,19 @@ async function ensureOk(res: Response, what: string): Promise<unknown> {
 
 /** Pull an id/urn out of Doctavian's envelope shapes, which vary per endpoint. */
 function pickUrn(json: unknown): string | undefined {
-  const at = (path: string[]): unknown =>
-    path.reduce<unknown>((node, key) => (node && typeof node === "object" ? (node as Record<string, unknown>)[key] : undefined), json);
+  const at = (path: Array<string | number>): unknown =>
+    path.reduce<unknown>(
+      (node, key) =>
+        node && typeof node === "object"
+          ? (node as Record<string | number, unknown>)[key]
+          : undefined,
+      json
+    );
 
-  const candidates = [
+  const candidates: Array<Array<string | number>> = [
+    // Uploads answer { result: { data: { files: [ { id, fileName } ] } } }.
+    ["result", "data", "files", 0, "id"],
+    ["data", "files", 0, "id"],
     ["result", "data", "document", "urn"],
     ["result", "data", "urn"],
     ["result", "data", "id"],
@@ -95,36 +106,65 @@ export function toDoctavianData(payload: ContractPayload) {
   return { data: { Agreement: [payload] } };
 }
 
-export async function uploadContractData(payload: ContractPayload): Promise<string> {
+async function uploadFile(endpoint: string, blob: Blob, filename: string, what: string): Promise<string> {
   const form = new FormData();
-  const json = JSON.stringify(toDoctavianData(payload), null, 2);
-  form.append("file", new Blob([json], { type: "application/json" }), `${payload.agreementId}.json`);
+  form.append("file", blob, filename);
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15_000);
+  const timeout = setTimeout(() => controller.abort(), 20_000);
   try {
-    const res = await fetch(DOCTAVIAN_DATA_UPLOAD_ENDPOINT, {
+    const res = await fetch(endpoint, {
       method: "POST",
       headers: headers(),
       body: form,
       signal: controller.signal,
     });
-    const json = await ensureOk(res, "data upload");
+    const json = await ensureOk(res, what);
     const urn = pickUrn(json);
-    if (!urn) throw new Error("Unrecognized Doctavian data-upload response — no urn");
+    if (!urn) throw new Error(`Unrecognized Doctavian ${what} response — no urn`);
     return urn;
   } finally {
     clearTimeout(timeout);
   }
 }
 
-export function buildGenerateRequest(payload: ContractPayload, dataUrn: string) {
+export async function uploadContractData(payload: ContractPayload): Promise<string> {
+  const json = JSON.stringify(toDoctavianData(payload), null, 2);
+  return uploadFile(
+    DOCTAVIAN_DATA_UPLOAD_ENDPOINT,
+    new Blob([json], { type: "application/json" }),
+    `${payload.agreementId}.json`,
+    "data upload"
+  );
+}
+
+/**
+ * Upload the agreement template for this generation.
+ *
+ * Deliberately per-run: the demo environment consumes a template on first use, so
+ * a URN captured once works exactly once and then fails with
+ * FILE_MISSING_FROM_STORAGE. Building it in memory keeps the placeholders and the
+ * ContractPayload in the same repo, so they cannot drift.
+ */
+export async function uploadAgreementTemplate(): Promise<string> {
+  const bytes = buildAgreementTemplateDocx();
+  return uploadFile(
+    DOCTAVIAN_TEMPLATE_UPLOAD_ENDPOINT,
+    new Blob([new Uint8Array(bytes)], {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    }),
+    AGREEMENT_TEMPLATE_FILENAME,
+    "template upload"
+  );
+}
+
+export function buildGenerateRequest(payload: ContractPayload, dataUrn: string, templateUrn: string) {
   return {
     externalContext: { id: payload.agreementId },
     template: {
-      name: "emergency-supplier-transition-agreement.docx",
-      urn: process.env.DOCTAVIAN_TEMPLATE_URN!,
-      fileFormat: process.env.DOCTAVIAN_TEMPLATE_FORMAT || "docx",
+      name: AGREEMENT_TEMPLATE_FILENAME,
+      urn: templateUrn,
+      fileFormat: "docx",
       loadMethod: "Storage",
       options: {},
     },
@@ -149,8 +189,9 @@ export async function generateViaDoctavian(
 ): Promise<{ url: string; urn: string; dataUrn: string; request: unknown }> {
   if (getDemoFlags().doctavian) throw new Error("Doctavian failure injected for demo");
 
-  const dataUrn = await uploadContractData(payload);
-  const body = buildGenerateRequest(payload, dataUrn);
+  // Template and data are both uploaded for this run, then tied together.
+  const [templateUrn, dataUrn] = await Promise.all([uploadAgreementTemplate(), uploadContractData(payload)]);
+  const body = buildGenerateRequest(payload, dataUrn, templateUrn);
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20_000);

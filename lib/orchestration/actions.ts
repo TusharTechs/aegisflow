@@ -93,7 +93,7 @@ export async function prepareDocuments(id: string) {
         operation: "generate Emergency Supplier Transition Agreement",
         method: "POST",
         endpoint: DOCTAVIAN_GENERATE_ENDPOINT,
-        request: { template_urn: process.env.DOCTAVIAN_TEMPLATE_URN, payload },
+        request: { payload },
         response: { error: err instanceof Error ? err.message : "unknown" },
         mode: "LOCAL",
         status: "error",
@@ -108,7 +108,7 @@ export async function prepareDocuments(id: string) {
       method: "POST",
       endpoint: DOCTAVIAN_GENERATE_ENDPOINT,
       request: {
-        template: { urn: process.env.DOCTAVIAN_TEMPLATE_URN ?? "(DOCTAVIAN_TEMPLATE_URN not set)", fileFormat: "docx", loadMethod: "Storage" },
+        template: { name: "emergency-supplier-transition-agreement.docx", fileFormat: "docx", loadMethod: "Storage" },
         data: { loadMethod: "Storage", payload },
         document: { name: `emergency-supplier-transition-agreement-${payload.agreementId}`, fileFormat: "pdf", deliveryMethod: "Storage" },
       },
@@ -118,7 +118,7 @@ export async function prepareDocuments(id: string) {
       ms: Date.now() - docStart,
       note: doctavianFail
         ? "Doctavian failure injected via demo control — same payload rendered locally."
-        : "Doctavian credentials incomplete (needs DOCTAVIAN_API_KEY + DOCTAVIAN_ACCESS_TOKEN + DOCTAVIAN_TEMPLATE_URN) — the same structured payload is rendered locally at /documents/agreement.",
+        : "Doctavian credentials incomplete (needs DOCTAVIAN_API_KEY + DOCTAVIAN_ACCESS_TOKEN) — the same structured payload is rendered locally at /documents/agreement.",
     });
   }
 

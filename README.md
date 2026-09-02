@@ -118,7 +118,9 @@ uploaded as a file and addressed by URN, the template is uploaded and addressed 
 URN, and generation ties them together with an output spec. That suits this app,
 because the thing being handed over is already a typed object.
 
-- **The calls:** [`doctavian/client.ts`](integrations/doctavian/client.ts) — `POST /v1/documents/data/upload` (the decision payload becomes the data source), then `POST /v1/documents/document/generate` against the stored template, then download by document URN
+- **The calls:** [`doctavian/client.ts`](integrations/doctavian/client.ts) — `POST /v1/documents/template/upload` and `POST /v1/documents/data/upload` in parallel (the decision payload *is* the data source), then `POST /v1/documents/document/generate` tying the two URNs together, then download by document URN
+- **The template is code:** [`doctavian-template.ts`](lib/documents/doctavian-template.ts) builds the .docx in memory each run. Two reasons — the demo environment consumes a template on first use, so a stored URN works exactly once; and generating it means the placeholders and the Zod `ContractPayload` cannot drift apart
+- **The contract discloses its own evidence position:** an `mdoc:paragraph` reveals an unverified-claims notice only when `evidenceSummary.conflicts >= 1`. Verified live — same template, `conflicts: 1` renders the notice, `conflicts: 0` hides it
 - **Auth:** two credentials, both enforced by the gateway — `X-Api-Key` plus a Microsoft OAuth2 bearer (authorization_code + PKCE). The OAuth flow is interactive by design, so the bearer is supplied via `DOCTAVIAN_ACCESS_TOKEN`
 - **Wired in:** [`actions.ts` `prepareDocuments`](lib/orchestration/actions.ts) — the payload is built by [`documents/contract.ts`](lib/documents/contract.ts) from the ranked decision
 - **Proof at runtime:** the *Decision* panel shows the payload; the ledger records the exact upload + generate bodies and the returned document URN
@@ -340,7 +342,6 @@ NUTRIENT_FULL=false        # true routes all six documents through Nutrient
 
 DOCTAVIAN_API_KEY=         # subscription key (X-Api-Key)
 DOCTAVIAN_ACCESS_TOKEN=    # Microsoft OAuth bearer — mint once via their Postman collection
-DOCTAVIAN_TEMPLATE_URN=    # URN from POST /v1/documents/template/upload
 
 # eSign has its OWN credentials and host. The PDF Services pair from
 # developer-api.foxit.com does NOT authenticate here — the token endpoint

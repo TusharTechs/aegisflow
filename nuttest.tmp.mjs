@@ -1,0 +1,15 @@
+import { chromium } from "playwright";
+const B = "https://aegisflow-ai.vercel.app";
+const b = await chromium.launch({ headless: true });
+const p = await b.newPage({ viewport: { width: 1440, height: 900 } });
+p.setDefaultTimeout(150000);
+await p.goto(`${B}/incidents/INC-1042`, { waitUntil: "networkidle" });
+await p.click('button:has-text("Reset demo")');
+await p.waitForTimeout(4000);
+await p.reload({ waitUntil: "networkidle" });
+console.log("reset done — running investigation (this spends ~9 Nutrient credits)");
+await p.click('button:has-text("Run Response")');
+await p.waitForSelector('h2:has-text("Evidence conflict")', { timeout: 150000 });
+const lines = await p.locator(':text("documents processed")').first().innerText().catch(() => "?");
+console.log("console line:", lines);
+await b.close();

@@ -150,6 +150,35 @@ async function slide(page, index, to, steps = 16) {
   }
 }
 
+/**
+ * Wait for the run to finish and the conflict panel to be on screen.
+ *
+ * The console streams client-side and calls router.refresh() when it is done, but
+ * that refresh can be served by a warm instance whose copy of the incident predates
+ * the run — so the stream says "Human review required" while the page still shows
+ * the pre-run state. Reloading is the reliable signal.
+ */
+async function waitForConflictPanel(page, budgetMs = 90_000) {
+  const panel = 'h2:has-text("Evidence conflict")';
+  const deadline = Date.now() + budgetMs;
+  let reloadedAt = 0;
+  while (Date.now() < deadline) {
+    if (page.isClosed()) throw new Error("the browser window was closed");
+    if (await page.locator(panel).count()) return;
+    const done = await page.locator(':text("Human review required")').count();
+    // Once the stream is finished, reload every few seconds until the server agrees.
+    if (done && Date.now() - reloadedAt > 5000) {
+      reloadedAt = Date.now();
+      await page.reload({ waitUntil: "networkidle" }).catch(() => {});
+    }
+    await sleep(1200);
+  }
+  throw new Error(
+    "the investigation finished but the conflict panel never rendered — " +
+      "check that the incident left INVESTIGATING and that Xano is reachable"
+  );
+}
+
 const exists = async (page, sel) => (await page.locator(sel).count()) > 0;
 
 // ── run ───────────────────────────────────────────────────────────────────────
@@ -212,10 +241,9 @@ try {
   // 3 — the investigation (the one variable-length scene)
   mark(SCENES[2].title);
   await page.click('button:has-text("Run Response")');
-  const consoleCard = 'div:has(> div > h2:text-is("AI response status")), div:has-text("AI response status")';
   await sleep(1000 * SCALE);
-  await reveal(page, consoleCard);
-  await page.waitForSelector('h2:has-text("Evidence conflict")', { timeout: 120_000 });
+  await reveal(page, 'div.rounded-lg.border:has-text("AI response status")');
+  await waitForConflictPanel(page);
   await holdUntil(SCENES[2].end, SCENES[2].title);
 
   // 4 — the conflict

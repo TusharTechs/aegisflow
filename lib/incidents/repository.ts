@@ -64,7 +64,19 @@ class ResilientRepository implements IAegisRepository {
   private local = new InMemoryRepository();
   private hardDegraded = false; // schema/network error — stays down until restart
   private coolingUntil = 0; // transient 429 — back off briefly, then retry
-  private hydrated = new Set<string>();
+  /**
+   * When each incident was last read from Xano.
+   *
+   * This used to be a Set with no expiry — read once, then serve the mirror for the
+   * life of the process. That is right for one long-lived server and wrong for
+   * serverless: the investigation runs in one instance and writes to Xano, while a
+   * different warm instance renders the page from a mirror it hydrated before the
+   * run and never refreshes. The run completes, the rows land, and the page still
+   * shows the old state. A TTL bounds that to a few seconds without putting a Xano
+   * read on every render.
+   */
+  private hydrated = new Map<string, number>();
+  private readonly hydrationTtlMs = Number(process.env.XANO_HYDRATION_TTL_MS ?? 5000);
   private writeQueue: Array<{ kind: "save" | "audit"; run: () => Promise<void> }> = [];
   private draining: Promise<void> | null = null;
   degradedReason?: string;
@@ -85,7 +97,7 @@ class ResilientRepository implements IAegisRepository {
     this.local.reset();
     // Keep everything marked hydrated so we serve the fresh local copy instead of
     // re-pulling stale state, and push the reset state back to Xano in the background.
-    this.hydrated = new Set([DEMO_INCIDENT.id]);
+    this.hydrated = new Map([[DEMO_INCIDENT.id, Date.now()]]);
     const fresh = structuredClone(DEMO_INCIDENT);
     this.enqueueWrite("save", () => this.xano.saveIncident(fresh));
   }
@@ -186,15 +198,22 @@ class ResilientRepository implements IAegisRepository {
     return this.writeQueue.length;
   }
 
+  /** True when this incident's mirror is old enough to be worth re-reading. */
+  private isStale(id: string): boolean {
+    const readAt = this.hydrated.get(id);
+    return readAt === undefined || Date.now() - readAt > this.hydrationTtlMs;
+  }
+
   async listIncidents(): Promise<Incident[]> {
-    // Once the demo incident is hydrated, the dashboard reads from the mirror too
-    // — no need to spend rate budget re-listing on every navigation.
-    if (this.down || this.hydrated.has(DEMO_INCIDENT.id)) return this.local.listIncidents();
+    // The dashboard reads from the mirror between refreshes, on the same TTL as a
+    // single incident — no need to spend rate budget re-listing on every nav.
+    if (this.down || !this.isStale(DEMO_INCIDENT.id)) return this.local.listIncidents();
     try {
       const rows = await this.xano.listIncidents();
+      const now = Date.now();
       for (const inc of rows) {
         await this.local.saveIncident(structuredClone(inc));
-        this.hydrated.add(inc.id);
+        this.hydrated.set(inc.id, now);
       }
       return rows;
     } catch (err) {
@@ -204,12 +223,13 @@ class ResilientRepository implements IAegisRepository {
   }
 
   async getIncident(id: string): Promise<Incident | undefined> {
-    // Read Xano once per incident, then serve from the mirror — the free tier is
-    // rate-limited and every page render would otherwise hit it.
-    if (!this.down && !this.hydrated.has(id)) {
+    // Serve the mirror between reads — the free tier is rate-limited and every page
+    // render would otherwise hit it — but re-read once the entry goes stale, so a
+    // write made by another instance becomes visible here.
+    if (!this.down && this.isStale(id)) {
       try {
         const fromXano = await this.xano.getIncident(id);
-        this.hydrated.add(id);
+        this.hydrated.set(id, Date.now());
         if (fromXano) {
           await this.local.saveIncident(structuredClone(fromXano));
           return fromXano;

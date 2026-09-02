@@ -10,6 +10,7 @@ const LABELS: Record<keyof DemoFlags, string> = {
   nutrient: "Fail Nutrient",
   doctavian: "Fail Doctavian",
   foxit: "Fail Foxit",
+  namecom: "Fail name.com",
   gemini: "Disable Gemini",
 };
 

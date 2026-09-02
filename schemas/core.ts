@@ -32,6 +32,8 @@ export const ClaimSchema = z.object({
     documentId: z.string(),
     field: z.string(),
     mode: z.enum(["LIVE", "LOCAL"]),
+    /** The verification rule that produced this verdict. */
+    rule: z.string().optional(),
   }).optional(),
 });
 
@@ -101,7 +103,7 @@ export type SignatureRecord = z.infer<typeof SignatureRecordSchema>;
 
 export const ApiCallSchema = z.object({
   id: z.string(),
-  sponsor: z.enum(["SerpApi", "Nutrient", "Doctavian", "Foxit", "Xano", "Gemini"]),
+  sponsor: z.enum(["SerpApi", "Nutrient", "Doctavian", "Foxit", "Xano", "name.com", "Gemini"]),
   operation: z.string(),
   method: z.string(),
   endpoint: z.string(),
@@ -129,6 +131,16 @@ export const ExternalSourceSchema = z.object({
 });
 export type ExternalSource = z.infer<typeof ExternalSourceSchema>;
 
+export const DomainFootprintSchema = z.object({
+  supplierId: z.string(),
+  domain: z.string(),
+  purchasable: z.boolean(),
+  signal: z.enum(["CORROBORATED", "NO_FOOTPRINT"]),
+  mode: z.enum(["LIVE", "DEMO SEEDED"]),
+  finding: z.string(),
+});
+export type DomainFootprint = z.infer<typeof DomainFootprintSchema>;
+
 export const IncidentSchema = z.object({
   id: z.string(),
   supplier: z.string(),
@@ -147,6 +159,7 @@ export const IncidentSchema = z.object({
     source: z.enum(["gemini", "fallback"]),
   }).optional(),
   externalSources: z.array(ExternalSourceSchema).optional(),
+  domainFootprints: z.array(DomainFootprintSchema).optional(),
   apiActivity: z.array(ApiCallSchema).optional(),
   auditLog: z.array(z.object({
     timestamp: z.string(),

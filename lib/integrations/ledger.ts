@@ -137,6 +137,12 @@ export const SPONSOR_META: SponsorMeta[] = [
     docsUrl: "https://www.nutrient.io/api/",
   },
   {
+    name: "name.com",
+    challenge: "Domain API Challenge",
+    role: "Supplier legitimacy from the domain system. A manufacturer claiming eight years of trading has a registered domain; if checkAvailability says its domain is still purchasable, nobody owns it — scored as absence of commercial footprint.",
+    docsUrl: "https://docs.name.com/api/v1/reference/domains/check-availability",
+  },
+  {
     name: "Doctavian",
     challenge: "Generate It Right. Sign It Tight.",
     role: "Turns the structured, evidence-backed decision payload into the Emergency Supplier Transition Agreement. The decision → payload → document chain is visible in the UI.",

@@ -3,10 +3,18 @@ export interface DemoFlags {
   nutrient: boolean;
   doctavian: boolean;
   foxit: boolean;
+  namecom: boolean;
   gemini: boolean;
 }
 
-const DEFAULTS: DemoFlags = { serpapi: false, nutrient: false, doctavian: false, foxit: false, gemini: false };
+const DEFAULTS: DemoFlags = {
+  serpapi: false,
+  nutrient: false,
+  doctavian: false,
+  foxit: false,
+  namecom: false,
+  gemini: false,
+};
 
 const globalFlags = globalThis as unknown as { __aegisDemoFlags?: DemoFlags };
 

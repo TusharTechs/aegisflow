@@ -1,0 +1,274 @@
+/**
+ * Verification rules.
+ *
+ * Every verdict below is COMPUTED from the values that Nutrient DWS (or the local
+ * fallback extractor) pulled out of the PDF. No rule is keyed on which document it
+ * came from — they match on document *type* and then read *fields*.
+ *
+ * That distinction is the whole point. Change `FORMED` in the Shenzhen business
+ * registration to 2018 and the "Established 2018" conflict disappears on the next
+ * run. Put a certificate id in `REGISTRY_MATCH` and the ISO claim verifies. Expire
+ * a certificate and it drops to UNVERIFIED on its own. The engine detects the
+ * contradiction; it does not replay a scripted one.
+ *
+ * `tests/rules.test.ts` pins exactly that: same code, mutated fields, different
+ * verdicts.
+ */
+
+export type ClaimSubject =
+  | "iso-9001"
+  | "entity-age"
+  | "entity-registered"
+  | "registration-status"
+  | "product-compatibility"
+  | "lead-time";
+
+export interface DerivedClaim {
+  supplierId: string;
+  subject: ClaimSubject;
+  text: string;
+  confidence: number;
+  status: "VERIFIED" | "UNVERIFIED" | "CONFLICT";
+  conflictReason?: string;
+  /** The extracted field this verdict was read from — the provenance anchor. */
+  field: string;
+  /** Which rule produced it, surfaced in the UI so a reviewer can audit the logic. */
+  rule: string;
+}
+
+export type ExtractedFields = Record<string, string>;
+
+export interface RuleContext {
+  supplierId: string;
+  /** The component the incident is about — used to judge stated equivalence. */
+  affectedProduct?: string;
+}
+
+export interface VerificationRule {
+  id: string;
+  description: string;
+  appliesTo: (documentType: string) => boolean;
+  run: (fields: ExtractedFields, ctx: RuleContext) => DerivedClaim[];
+}
+
+const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
+
+/** First 4-digit year in a field value, if there is one. */
+export function yearOf(value?: string): number | undefined {
+  const m = value?.match(/\b(?:19|20)\d{2}\b/);
+  return m ? parseInt(m[0], 10) : undefined;
+}
+
+/**
+ * Registrars whose ISO 9001 certificates are issued under an accreditation body.
+ * An issuer outside this set is not proof of fraud — it is grounds to withhold
+ * VERIFIED until something independent corroborates it.
+ */
+const ACCREDITED_ISSUER = /t[uü]v|sgs|bureau\s*veritas|dnv|intertek|lloyd'?s|bsi|dekra|ul\s*solutions|afnor|kiwa/i;
+
+/** A registry lookup that came back empty, however the extractor phrased it. */
+const NEGATIVE_REGISTRY = /\b(not\s*found|no\s*match|no\s*record|none|absent|n\/?a|unknown)\b/i;
+
+const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+/**
+ * Which underlying assertion a claim is about. Used to match a claim extracted
+ * from a document against the supplier's own stated claim, without either side
+ * hardcoding the other's id.
+ */
+export function classifyClaim(text: string): ClaimSubject | undefined {
+  const t = text.toLowerCase();
+  if (/\biso\s*9001\b/.test(t)) return "iso-9001";
+  if (/\bregistered entity since\b/.test(t)) return "entity-registered";
+  if (/\bregistration status\b|\bactive business registration\b/.test(t)) return "registration-status";
+  if (/\bestablished\b|\bfounded\b|\bin business since\b|\boperating since\b/.test(t)) return "entity-age";
+  if (/\bcompatib|\bequivalent\b|\bcross-?reference\b/.test(t)) return "product-compatibility";
+  if (/\blead time\b|\bday\b|\bshipping\b|\bexpedited\b/.test(t)) return "lead-time";
+  return undefined;
+}
+
+/**
+ * Rule 1 — cross-check the supplier's public founding claim against the registry.
+ *
+ * The business registration is treated as ground truth: it is issued by a state
+ * authority, the About-page copy is not. When the document carries both, they get
+ * compared. Agreement verifies the claim; disagreement is a CONFLICT whose
+ * confidence falls as the gap widens.
+ */
+const entityAgeVsRegistry: VerificationRule = {
+  id: "entity-age-vs-registry",
+  description:
+    "Compares the founding year a supplier claims publicly against the FORMED date on its business registration.",
+  appliesTo: (type) => /business registration|business licen[cs]e|trade registry/i.test(type),
+  run: (f, ctx) => {
+    const formedYear = yearOf(f.FORMED);
+    if (formedYear === undefined) return [];
+
+    const out: DerivedClaim[] = [];
+    const statusActive = /\bactive\b/i.test(f.STATUS ?? "");
+
+    out.push({
+      supplierId: ctx.supplierId,
+      subject: "entity-registered",
+      text: `Registered entity since ${formedYear}`,
+      confidence: clamp(95 + (f.REGISTRY ? 2 : 0)),
+      status: "VERIFIED",
+      field: "FORMED",
+      rule: "entity-age-vs-registry",
+    });
+
+    out.push({
+      supplierId: ctx.supplierId,
+      subject: "registration-status",
+      text: statusActive ? "Active business registration status" : "Business registration is not active",
+      confidence: clamp(statusActive ? 95 : 40),
+      status: statusActive ? "VERIFIED" : "UNVERIFIED",
+      conflictReason: statusActive ? undefined : `Registration STATUS reads "${f.STATUS ?? "unknown"}".`,
+      field: "STATUS",
+      rule: "entity-age-vs-registry",
+    });
+
+    // The supplier's own public founding claim, when the extraction captured it.
+    const publicClaim = f.ABOUT_PAGE_CLAIM ?? f.PUBLIC_CLAIM ?? f.WEBSITE_CLAIM;
+    const claimedYear = yearOf(publicClaim);
+    if (claimedYear !== undefined) {
+      const gap = Math.abs(formedYear - claimedYear);
+      const agrees = gap === 0;
+      out.push({
+        supplierId: ctx.supplierId,
+        subject: "entity-age",
+        text: (publicClaim ?? `Established ${claimedYear}`).trim(),
+        confidence: agrees ? 95 : clamp(60 - gap * 10),
+        status: agrees ? "VERIFIED" : "CONFLICT",
+        conflictReason: agrees
+          ? undefined
+          : `Supplier materials claim ${claimedYear}; the business registration shows FORMED ${f.FORMED}. ` +
+            `${gap} year${gap === 1 ? "" : "s"} of operating history cannot be substantiated.`,
+        field: "FORMED",
+        rule: "entity-age-vs-registry",
+      });
+    }
+
+    return out;
+  },
+};
+
+/**
+ * Rule 2 — a certificate is only as good as the registry that backs it.
+ *
+ * Three independent things can withhold VERIFIED: the issuing registry has no
+ * matching record, the issuer is not an accreditation body, or the certificate has
+ * expired. Each one is read from a field and each one is reported separately.
+ */
+const certificateRegistryMatch: VerificationRule = {
+  id: "certificate-registry-match",
+  description:
+    "Verifies an ISO 9001 certificate against its registry match, the accreditation status of its issuer, and its expiry date.",
+  appliesTo: (type) => /certificat|iso\s*9001/i.test(type),
+  run: (f, ctx) => {
+    const isIso9001 = /\biso\s*9001\b/i.test(`${f.DOC_TYPE ?? ""} ${f.SCOPE ?? ""}`);
+    if (!isIso9001) return [];
+
+    let confidence = 90;
+    let status: DerivedClaim["status"] = "VERIFIED";
+    const failures: string[] = [];
+    let anchorField = "CERT_NUMBER";
+
+    if (f.CERT_NUMBER) confidence += 3;
+
+    const registryMatch = f.REGISTRY_MATCH;
+    if (registryMatch !== undefined && NEGATIVE_REGISTRY.test(registryMatch)) {
+      status = "UNVERIFIED";
+      confidence = confidence * 0.6;
+      anchorField = "REGISTRY_MATCH";
+      failures.push(`the certificate registry returned REGISTRY_MATCH: ${registryMatch.trim()}`);
+    }
+
+    const issuer = (f.ISSUER ?? "").trim();
+    if (issuer) {
+      if (ACCREDITED_ISSUER.test(issuer)) {
+        confidence += 5;
+      } else {
+        status = "UNVERIFIED";
+        confidence = confidence * 0.9;
+        if (anchorField === "CERT_NUMBER") anchorField = "ISSUER";
+        failures.push(`the issuing body "${issuer}" is not an accredited registrar`);
+      }
+    }
+
+    const validUntil = f.VALID_UNTIL ? Date.parse(f.VALID_UNTIL) : NaN;
+    if (!Number.isNaN(validUntil) && validUntil < Date.now()) {
+      status = "UNVERIFIED";
+      confidence = confidence * 0.7;
+      anchorField = "VALID_UNTIL";
+      failures.push(`the certificate expired on ${f.VALID_UNTIL}`);
+    }
+
+    return [
+      {
+        supplierId: ctx.supplierId,
+        subject: "iso-9001",
+        text: "ISO 9001 Certified",
+        confidence: clamp(confidence),
+        status,
+        conflictReason: failures.length
+          ? `Cannot be treated as verified because ${failures.join("; and ")}.`
+          : undefined,
+        field: anchorField,
+        rule: "certificate-registry-match",
+      },
+    ];
+  },
+};
+
+/**
+ * Rule 3 — stated equivalence only counts when it names the part actually at risk.
+ *
+ * A datasheet claiming equivalence to some other component is not evidence for
+ * this incident, so the affected product has to appear in EQUIVALENT_TO.
+ */
+const productEquivalence: VerificationRule = {
+  id: "product-equivalence",
+  description:
+    "Confirms a datasheet's stated equivalence names the component the incident is actually about.",
+  appliesTo: (type) => /product specification|datasheet|technical spec/i.test(type),
+  run: (f, ctx) => {
+    const equivalent = f.EQUIVALENT_TO;
+    if (!equivalent || !ctx.affectedProduct) return [];
+
+    const matches = norm(equivalent).includes(norm(ctx.affectedProduct));
+    return [
+      {
+        supplierId: ctx.supplierId,
+        subject: "product-compatibility",
+        text: `${ctx.affectedProduct} direct compatibility`,
+        confidence: matches ? 96 : 35,
+        status: matches ? "VERIFIED" : "UNVERIFIED",
+        conflictReason: matches
+          ? undefined
+          : `Datasheet states equivalence to "${equivalent}", which is not the ${ctx.affectedProduct}.`,
+        field: "EQUIVALENT_TO",
+        rule: "product-equivalence",
+      },
+    ];
+  },
+};
+
+export const VERIFICATION_RULES: VerificationRule[] = [
+  entityAgeVsRegistry,
+  certificateRegistryMatch,
+  productEquivalence,
+];
+
+/**
+ * Run every rule that applies to this document type over its extracted fields.
+ * Documents with no supplier (e.g. the incumbent's master supply agreement) carry
+ * no supplier claims, so no rule fires for them.
+ */
+export function deriveClaims(
+  documentType: string,
+  fields: ExtractedFields,
+  ctx: RuleContext
+): DerivedClaim[] {
+  return VERIFICATION_RULES.filter((r) => r.appliesTo(documentType)).flatMap((r) => r.run(fields, ctx));
+}

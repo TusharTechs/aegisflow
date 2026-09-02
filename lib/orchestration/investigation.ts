@@ -2,6 +2,7 @@ import { appendAudit, getIncident, persistenceMode, persistenceNote, saveInciden
 import { isXanoConfigured } from "@/integrations/xano/client";
 import { analyzeIncident } from "@/lib/agents/incident-analyst";
 import { runWebIntelligence, buildQueries } from "@/lib/agents/web-intelligence";
+import { runDomainIntelligence } from "@/lib/agents/domain-intelligence";
 import { runDocumentIntelligence, mergeDocClaims } from "@/lib/agents/document-intelligence";
 import { verifyClaims, corroborationBySupplier } from "@/lib/agents/verification";
 import { explainDecision } from "@/lib/agents/decision";
@@ -58,10 +59,24 @@ export async function* runInvestigation(id: string): AsyncGenerator<Investigatio
   });
   await pace(350);
 
+  const domains = await runDomainIntelligence(incident, ledger);
+  incident.domainFootprints = domains.footprints;
+  const missing = domains.footprints.filter((f) => f.signal === "NO_FOOTPRINT");
+  yield await push({
+    message:
+      `Supplier domain footprint checked — ` +
+      (missing.length
+        ? `${missing.length} of ${domains.footprints.length} have no registered domain (${missing.map((m) => m.domain).join(", ")})`
+        : `all ${domains.footprints.length} registered`),
+    actor: "AI",
+    tag: domains.liveCount > 0 ? "LIVE" : "DEMO SEEDED",
+  });
+  await pace(350);
+
   yield await push({ message: "Processing 6 supplier documents…", actor: "AI" });
   await pace(400);
 
-  const docs = await runDocumentIntelligence(ledger);
+  const docs = await runDocumentIntelligence(ledger, { affectedProduct: incident.affectedProduct });
   mergeDocClaims(incident, docs);
   const docTag = docs.liveCount > 0 ? "LIVE" : "LOCAL";
   yield await push({

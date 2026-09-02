@@ -4,12 +4,17 @@ import { revalidatePath } from "next/cache";
 import { appendAudit, getIncident, resetRepository, saveIncident, transitionIncident } from "@/lib/incidents/repository";
 import { rankSuppliers } from "@/lib/suppliers/ranking";
 import { buildContractPayload } from "@/lib/documents/contract";
-import { DOCTAVIAN_GENERATE_ENDPOINT, generateViaDoctavian, isDoctavianConfigured } from "@/integrations/doctavian/client";
+import {
+  DOCTAVIAN_GENERATE_ENDPOINT,
+  generateViaDoctavian,
+  isDoctavianConfigured,
+} from "@/integrations/doctavian/client";
 import { FOXIT_ESIGN_ENDPOINT, createFoxitSigningSession, isFoxitConfigured } from "@/integrations/foxit/client";
 import { NUTRIENT_BUILD_ENDPOINT, isNutrientConfigured } from "@/integrations/nutrient/client";
 import { getDemoFlags, setDemoFlag, DemoFlags } from "@/lib/orchestration/demo-controls";
 import { recordOnIncident } from "@/lib/integrations/ledger";
 import { assertHumanMaySign } from "@/lib/state/guards";
+import { assertToolAllowed } from "@/lib/state/agent-tools";
 
 /** revalidatePath throws outside a request scope (e.g. unit tests); that is not fatal here. */
 function safeRevalidate(path: string) {
@@ -68,15 +73,15 @@ export async function prepareDocuments(id: string) {
       mode = "LIVE";
       recordOnIncident(incident, {
         sponsor: "Doctavian",
-        operation: "generate Emergency Supplier Transition Agreement",
+        operation: "upload decision payload + generate Emergency Supplier Transition Agreement",
         method: "POST",
         endpoint: DOCTAVIAN_GENERATE_ENDPOINT,
-        request: { template_id: process.env.DOCTAVIAN_TEMPLATE_ID ?? "emergency-transition-agreement", variables: payload },
-        response: { url, document_id: payload.agreementId },
+        request: result.request,
+        response: { document_urn: result.urn, data_urn: result.dataUrn, download: url },
         mode: "LIVE",
         status: "ok",
         ms: Date.now() - docStart,
-        note: "Agreement rendered by Doctavian from the structured decision payload.",
+        note: "The Zod-validated decision payload was uploaded as the Doctavian data source, then rendered against the stored template — no free-text prompt anywhere in the chain.",
       });
     } catch (err) {
       mode = "LOCAL";
@@ -85,7 +90,7 @@ export async function prepareDocuments(id: string) {
         operation: "generate Emergency Supplier Transition Agreement",
         method: "POST",
         endpoint: DOCTAVIAN_GENERATE_ENDPOINT,
-        request: { template_id: process.env.DOCTAVIAN_TEMPLATE_ID ?? "emergency-transition-agreement", variables: payload },
+        request: { template_urn: process.env.DOCTAVIAN_TEMPLATE_URN, payload },
         response: { error: err instanceof Error ? err.message : "unknown" },
         mode: "LOCAL",
         status: "error",
@@ -99,14 +104,18 @@ export async function prepareDocuments(id: string) {
       operation: "generate Emergency Supplier Transition Agreement",
       method: "POST",
       endpoint: DOCTAVIAN_GENERATE_ENDPOINT,
-      request: { template_id: process.env.DOCTAVIAN_TEMPLATE_ID ?? "emergency-transition-agreement", variables: payload },
+      request: {
+        template: { urn: process.env.DOCTAVIAN_TEMPLATE_URN ?? "(DOCTAVIAN_TEMPLATE_URN not set)", fileFormat: "docx", loadMethod: "Storage" },
+        data: { loadMethod: "Storage", payload },
+        document: { name: `emergency-supplier-transition-agreement-${payload.agreementId}`, fileFormat: "pdf", deliveryMethod: "Storage" },
+      },
       response: { rendered_at: url, fields: Object.keys(payload).length },
       mode: "LOCAL",
       status: "fallback",
       ms: Date.now() - docStart,
       note: doctavianFail
         ? "Doctavian failure injected via demo control — same payload rendered locally."
-        : "DOCTAVIAN_API_KEY not configured — same structured payload rendered locally at /documents/agreement.",
+        : "Doctavian credentials incomplete (needs DOCTAVIAN_API_KEY + DOCTAVIAN_ACCESS_TOKEN + DOCTAVIAN_TEMPLATE_URN) — the same structured payload is rendered locally at /documents/agreement.",
     });
   }
 
@@ -157,8 +166,10 @@ export async function signAgreement(id: string, formData: FormData) {
   const authorized = formData.get("authorized") === "on";
   if (!signerName || !signerTitle || !authorized) return;
 
-  // "Your agent shouldn't sign that." This throws for any non-HUMAN actor or wrong state.
+  // "Your agent shouldn't sign that." Two independent gates, both named and tested:
+  // the workflow guard, and the tool registry that classifies eSign as irreversible.
   assertHumanMaySign("HUMAN", incident.state);
+  assertToolAllowed("esign.createFolder", "HUMAN", incident.state);
 
   const foxitStart = Date.now();
   const foxitFail = getDemoFlags().foxit;

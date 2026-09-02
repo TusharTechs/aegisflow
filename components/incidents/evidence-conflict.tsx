@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowRight, FileX2, ShieldX, SearchX } from "lucide-react";
+import { AlertTriangle, ArrowRight, FileX2, ShieldX, SearchX, Globe } from "lucide-react";
 import { Incident } from "@/schemas/core";
 import { corroborationBySupplier } from "@/lib/agents/verification";
 import { Card, CardContent } from "@/components/ui/card";
@@ -24,6 +24,7 @@ export function EvidenceConflict({ incident }: { incident: Incident }) {
     (s) => s.costMultiplier >= target.supplier.costMultiplier
   );
   const corr = corroborationBySupplier(incident)[target.supplier.id] ?? 0;
+  const footprint = (incident.domainFootprints ?? []).find((f) => f.supplierId === target.supplier.id);
 
   const cards = [
     ...target.bad.map((c) => ({
@@ -35,6 +36,7 @@ export function EvidenceConflict({ incident }: { incident: Incident }) {
         : c.source,
       finding: c.conflictReason ?? "Could not be independently verified.",
       confidence: c.confidence,
+      rule: c.documentEvidence?.rule,
     })),
     {
       icon: SearchX,
@@ -46,7 +48,21 @@ export function EvidenceConflict({ incident }: { incident: Incident }) {
           ? "Zero independent sources found. Absence of corroboration is treated as a negative signal."
           : `${corr} corroborating source(s) — below the threshold to offset the conflicts above.`,
       confidence: undefined as number | undefined,
+      rule: undefined as string | undefined,
     },
+    ...(footprint && footprint.signal === "NO_FOOTPRINT"
+      ? [
+          {
+            icon: Globe,
+            status: "NO DOMAIN" as const,
+            claim: footprint.domain,
+            claimSource: `name.com · checkAvailability · ${footprint.mode}`,
+            finding: `${footprint.finding} A company trading since 2018 would have registered it.`,
+            confidence: undefined as number | undefined,
+            rule: undefined as string | undefined,
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -65,13 +81,13 @@ export function EvidenceConflict({ incident }: { incident: Incident }) {
               {cheapest
                 ? `At ${target.supplier.costMultiplier.toFixed(2)}× baseline, a cost-first model would pick this supplier. `
                 : ""}
-              {target.bad.length} of its claims do not survive verification. AegisFlow discovered this from the
-              extracted document text — it was not scripted.
+              {target.bad.length} of its claims do not survive verification. Each verdict below was computed by a
+              named rule from the fields extracted out of the PDFs — change the field, and the verdict changes.
             </p>
           </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {cards.map((c, i) => (
             <div key={i} className="rounded-md border bg-card p-3">
               <div className="flex items-center justify-between">
@@ -83,6 +99,9 @@ export function EvidenceConflict({ incident }: { incident: Incident }) {
               <p className="mt-2 text-xs text-foreground">{c.finding}</p>
               {c.confidence !== undefined && (
                 <p className="mt-1 text-[11px] text-muted-foreground">Claim confidence: {c.confidence}%</p>
+              )}
+              {c.rule && (
+                <p className="mt-1 font-mono text-[11px] text-muted-foreground">rule: {c.rule}</p>
               )}
             </div>
           ))}

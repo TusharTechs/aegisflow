@@ -7,7 +7,7 @@
 
 **AI incident response for critical procurement. The AI does the four hours of investigation — a human keeps the pen.**
 
-*DevNetwork [API + Cloud + AI] Hackathon 2026 — SerpApi · Nutrient · Doctavian · Foxit · Xano*
+*DevNetwork [API + Cloud + AI] Hackathon 2026 — SerpApi · Nutrient · Doctavian · Foxit · name.com · Xano*
 
 [Live demo](https://aegisflow-ai.vercel.app) · [Architecture](#architecture) · [Verify the integrations](#verify-it-in-one-command)
 
@@ -43,7 +43,8 @@ Open `INC-1042` and press **Run Response**. A network of agents then:
 | 1 | **Analyse** | Frames the disruption from the incident facts | Gemini |
 | 2 | **Search** | One query per supplier + market and disruption-news queries; **zero results is a signal**, not a blank | SerpApi |
 | 3 | **Extract** | Pulls the fields every claim's provenance points back to, from the six supplier PDFs | Nutrient DWS |
-| 4 | **Verify** | Cross-checks every claim; surfaces the contradiction from the extracted text — not scripted | — |
+| 3b | **Domain footprint** | Is the supplier's own domain still available to buy? A company trading since 2018 registered its domain | name.com |
+| 4 | **Verify** | Named rules compare extracted fields against each other — the founding year a supplier claims vs the `FORMED` date on its registration, a certificate against its `REGISTRY_MATCH`. Change the field, the verdict changes | — |
 | 5 | **Score** | Six transparent risk dimensions, each citing its evidence, with an **integrity gate** a weighting can't beat | — |
 | 6 | **Decide** | Evidence-backed recommendation with confidence, risks and unknowns | Gemini |
 | — | **Human review** | Approve / reject / request-more-evidence — the only way the workflow advances | — |
@@ -112,21 +113,48 @@ decision → payload → document chain is visible in the UI, and the payload ca
 the evidence summary (verified count, conflict count, confidence) into the
 contract itself.
 
-- **The call:** [`doctavian/client.ts:9`](integrations/doctavian/client.ts#L9) — `POST https://api.doctavian.com/v1/documents/generate` with `template_id` + typed `variables`
+Doctavian's model is a *document request*, not string interpolation: data is
+uploaded as a file and addressed by URN, the template is uploaded and addressed by
+URN, and generation ties them together with an output spec. That suits this app,
+because the thing being handed over is already a typed object.
+
+- **The calls:** [`doctavian/client.ts`](integrations/doctavian/client.ts) — `POST /v1/documents/data/upload` (the decision payload becomes the data source), then `POST /v1/documents/document/generate` against the stored template, then download by document URN
+- **Auth:** two credentials, both enforced by the gateway — `X-Api-Key` plus a Microsoft OAuth2 bearer (authorization_code + PKCE). The OAuth flow is interactive by design, so the bearer is supplied via `DOCTAVIAN_ACCESS_TOKEN`
 - **Wired in:** [`actions.ts` `prepareDocuments`](lib/orchestration/actions.ts) — the payload is built by [`documents/contract.ts`](lib/documents/contract.ts) from the ranked decision
-- **Proof at runtime:** the *Decision* panel shows the payload; the agreement renders from it at `/documents/agreement/[id]`; the ledger records the exact `variables` sent
+- **Proof at runtime:** the *Decision* panel shows the payload; the ledger records the exact upload + generate bodies and the returned document URN
 
 ## Foxit — Your Agent Shouldn't Sign That
 
-This is the entire product thesis. The agent prepares the document *and* the
-signing request — but a finite-state machine plus a named guard make it
-**structurally impossible** for a non-human actor to create the eSign folder or
-reach the `SIGNED` state.
+This is the entire product thesis. Foxit already drew the line: their MCP server
+exposes ~40 **reversible** PDF operations as agent tools, and signing is
+deliberately not one of them — to put a document in front of a signer you must
+leave the tool sandbox and call eSign directly, with separately-issued
+credentials. AegisFlow turns that API-design opinion into an enforced property of
+the application.
 
+- **The tool boundary:** [`state/agent-tools.ts`](lib/state/agent-tools.ts) — every document operation is registered with a risk class (`REVERSIBLE` / `IRREVERSIBLE`) and the actors allowed to invoke it. `esign.createFolder` is the only irreversible entry, is `HUMAN`-only, and is valid from exactly one state
 - **The guard:** [`state/guards.ts:18`](lib/state/guards.ts#L18) `assertHumanMaySign(actor, state)` — throws for any non-`HUMAN` actor or wrong state
 - **The state machine:** [`state/machine.ts:21`](lib/state/machine.ts#L21) `HUMAN_ONLY_TARGETS = [APPROVED, REJECTED, SIGNED]`, enforced in [`repository.ts:232`](lib/incidents/repository.ts#L232)
-- **The call:** [`foxit/client.ts:52`](integrations/foxit/client.ts#L52) — `POST /esign/api/v1/folders/createfolder` with `sendNow: false`, reached only after the guard passes
-- **Proof at runtime:** the test [`guards.test.ts`](tests/guards.test.ts) drives the pipeline to `SIGNATURE_REQUIRED`, then asserts `transitionIncident(id, "SIGNED", "AI")` **rejects** — the AI has no path to sign, even calling the raw transition
+- **The call:** [`foxit/client.ts`](integrations/foxit/client.ts) — OAuth2 `client_credentials` against `/api/oauth2/access_token`, then `POST /api/folders/createfolder` with `sendNow: false`, reached only after both gates pass
+- **Credentials are isolated by design:** eSign has its own host and its own API Key/Secret from `account.foxit.com`. The PDF Services pair from `developer-api.foxit.com` does **not** authenticate here — we verified it: the token endpoint answers `invalid_client`
+- **Proof at runtime:** [`agent-tools.test.ts`](tests/agent-tools.test.ts) enumerates *every* actor × *every* workflow state and asserts no non-human combination can reach an irreversible tool; [`guards.test.ts`](tests/guards.test.ts) drives the pipeline to `SIGNATURE_REQUIRED` then asserts `transitionIncident(id, "SIGNED", "AI")` **rejects**
+
+## name.com — Domain API Challenge
+
+A manufacturer that has been trading for eight years has a website, and a website
+means somebody registered the domain. So "is this supplier's domain still
+available to buy?" is really "does this supplier exist commercially?" — and one
+`checkAvailability` call answers it.
+
+This is the **third independent line of evidence** on the same contradiction. The
+business registration says 2021, the ISO certificate has no registry match, and
+`shenzhenrapidparts.com` is unregistered. A supplier can forge a PDF; getting all
+three to agree is much harder.
+
+- **The call:** [`namecom/client.ts`](integrations/namecom/client.ts) — `POST /core/v1/domains:checkAvailability`, HTTP Basic auth, all three suppliers in one request
+- **Wired in:** [`domain-intelligence.ts`](lib/agents/domain-intelligence.ts) — stage 3b of the response; a purchasable domain becomes a **negative** signal in the risk model's reliability dimension, exactly as a zero-result SerpApi query does
+- **Honest fallback:** with no credentials the app reports the registration states observed against public DNS, tagged `DEMO SEEDED` — it reports what is true rather than inventing a better story
+- **Proof at runtime:** the red *Evidence conflict* panel carries a fourth card, `NO DOMAIN — shenzhenrapidparts.com`; the ledger shows the request body with all three domains
 
 ## Xano — Rebuild a SaaS Tool You Hate
 
@@ -146,18 +174,21 @@ No key, no account:
 
 ```bash
 # every sponsor endpoint that is actually called at runtime
-grep -rn "serpapi.com/search\|api.nutrient.io/build\|api.doctavian.com\|foxitesign.foxit.com\|XANO_API_BASE" integrations/
+grep -rn "serpapi.com/search\|api.nutrient.io/build\|doctavian.com\|foxitesign.foxit.com\|domains:checkAvailability\|XANO_API_BASE" integrations/
 
 # the guard that stops the agent signing — and the test that proves it
-grep -rn "assertHumanMaySign\|HUMAN_ONLY_TARGETS" lib/state/ lib/incidents/
+grep -rn "assertHumanMaySign\|HUMAN_ONLY_TARGETS\|IRREVERSIBLE" lib/state/ lib/incidents/
 
 # the integrity gate that a weighting can't beat
 grep -rn "INTEGRITY_CAP\|applyIntegrityCap" lib/risk/
+
+# no verdict is keyed on a document id — the rules read fields, not filenames
+grep -rn "REGISTRY_MATCH\|ABOUT_PAGE_CLAIM\|appliesTo" lib/agents/document-rules.ts
 ```
 
 ```bash
 npm install && node scripts/generate-pdfs.mjs && npm run dev   # runs fully offline with zero keys
-npm test                                                        # 28 passing
+npm test                                                        # 57 passing
 ```
 
 ---
@@ -173,12 +204,13 @@ after which the document is generated, watermarked and handed to eSign.
 flowchart TB
     INC(["Incident INC-1042<br/>supplier down · $2.4M exposed"])
 
-    INC --> A & W & D
+    INC --> A & W & N & D
     A["<b>Analyst</b><br/>Gemini"]
     W["<b>Web intelligence</b><br/>SerpApi · 5 live queries<br/>zero results = a signal"]
+    N["<b>Domain footprint</b><br/>name.com · checkAvailability<br/>a purchasable domain = no company"]
     D["<b>Document intelligence</b><br/>Nutrient DWS · 6 PDFs<br/>every field keeps provenance"]
 
-    A & W & D --> V["<b>Verification</b><br/>the 'Established 2018' vs 2021<br/>contradiction, from extracted text"]
+    A & W & N & D --> V["<b>Verification rules</b><br/>FORMED vs ABOUT_PAGE_CLAIM,<br/>certificate vs REGISTRY_MATCH"]
     V --> R{"<b>Risk engine</b><br/>6 cited dimensions<br/>integrity gate: a CONFLICT<br/>caps a supplier at 49/100"}
     R --> DEC["<b>Decision</b><br/>Gemini · confidence,<br/>risks, unknowns"]
     DEC --> H
@@ -201,7 +233,7 @@ flowchart TB
     style DONE fill:#6ee7b7,stroke:#059669,color:#111
 ```
 
-### The six agents
+### The agents
 
 Each returns a Zod-validated object, not a blob of prose. Gemini interprets;
 it never invents a fact or a score.
@@ -210,7 +242,9 @@ it never invents a fact or a score.
 |---|---|---|
 | [`incident-analyst`](lib/agents/incident-analyst.ts) | One-sentence framing of the disruption | Incident facts only |
 | [`web-intelligence`](lib/agents/web-intelligence.ts) | External sources + per-supplier corroboration counts | SerpApi, live |
+| [`domain-intelligence`](lib/agents/domain-intelligence.ts) | Whether each supplier owns the domain it would trade under | name.com Core API |
 | [`document-intelligence`](lib/agents/document-intelligence.ts) | Extracted fields → material claims, each with provenance | Nutrient DWS / local PDF text |
+| [`document-rules`](lib/agents/document-rules.ts) | The verdict itself — named rules comparing extracted fields | Deterministic, field-driven |
 | [`verification`](lib/agents/verification.ts) | Verified / unverified / conflicting, per claim | Deterministic cross-check |
 | [`risk/engine`](lib/risk/engine.ts) | Six scored dimensions per supplier, each citing evidence | Deterministic computation |
 | [`decision`](lib/agents/decision.ts) | Recommendation narrative + risks + unknowns | Gemini, from the ranked facts |
@@ -240,6 +274,7 @@ agreement. Only an authorized human can sign it."*
 | Seam | Live | Fallback (tagged) |
 |---|---|---|
 | Web intelligence | SerpApi | Per-query seeded corroboration · `DEMO SEEDED` |
+| Supplier domain footprint | name.com Core API | Registration states observed against public DNS · `DEMO SEEDED` |
 | Document extraction | Nutrient DWS `/build` | Local PDF text extraction · `LOCAL` |
 | Agreement generation | Doctavian | Local render of the same payload · `LOCAL` |
 | Signing | Foxit eSign | In-app human ceremony · `LOCAL` |
@@ -254,6 +289,7 @@ you can run it now.
 
 | | |
 |---|---|
+| **The verdicts are computed, not scripted** | No rule is keyed on a document id. `entity-age-vs-registry` reads `FORMED` and `ABOUT_PAGE_CLAIM` off the *same* registration and compares them; `certificate-registry-match` reads `REGISTRY_MATCH`, the issuer's accreditation and the expiry date. Edit the PDF so the registration says 2018 and the conflict disappears on the next run — [`rules.test.ts`](tests/rules.test.ts) pins exactly that, mutating fields and asserting the verdict moves. |
 | **A live search that finds nothing is evidence** | Absence of corroboration is scored against a supplier, not silently dropped. The demo suppliers are fictional, so per-supplier corroboration comes from curated registry records while the *market/news* queries run genuinely live — each tagged for what it is. |
 | **The rate-limited backend never breaks a screen** | Xano's free tier is 10 requests / 20s. Reads hydrate once then serve a mirror; writes are a paced, coalescing background queue; a transient `429` is a 20s cooldown, not a permanent downgrade. `Reset demo` pushes the fresh state back to Xano. |
 | **Gemini 3.x "thinks" by default** | Which leaks reasoning text into the response and breaks strict JSON parsing. Thinking is disabled per-call, the parser tolerates fences and prose, and the agent schemas are permissive on fields the app doesn't use — [`ai/gemini.ts`](lib/ai/gemini.ts). |
@@ -285,7 +321,7 @@ npm install
 node scripts/generate-pdfs.mjs      # the six evidence PDFs
 cp .env.example .env.local           # optional — add sponsor keys to go LIVE
 npm run dev                          # http://localhost:3000
-npm test                             # 28 passing
+npm test                             # 57 passing
 ```
 
 With no keys the full workflow runs on honest fallbacks and every screen stays
@@ -302,12 +338,19 @@ SERPAPI_API_KEY=           # serpapi.com — free 250 searches/mo
 NUTRIENT_API_KEY=          # dashboard.nutrient.io — Processor API key (free tier: 50 credits)
 NUTRIENT_FULL=false        # true routes all six documents through Nutrient
 
-DOCTAVIAN_API_KEY=         # doctavian.com
-DOCTAVIAN_TEMPLATE_ID=emergency-transition-agreement
+DOCTAVIAN_API_KEY=         # subscription key (X-Api-Key)
+DOCTAVIAN_ACCESS_TOKEN=    # Microsoft OAuth bearer — mint once via their Postman collection
+DOCTAVIAN_TEMPLATE_URN=    # URN from POST /v1/documents/template/upload
 
-FOXIT_CLIENT_ID=           # app.developer-api.foxit.com — same creds authenticate eSign
-FOXIT_CLIENT_SECRET=
+# eSign has its OWN credentials and host. The PDF Services pair from
+# developer-api.foxit.com does NOT authenticate here — the token endpoint
+# answers `invalid_client`. Sign up at account.foxit.com for these.
+FOXIT_ESIGN_CLIENT_ID=
+FOXIT_ESIGN_CLIENT_SECRET=
 FOXIT_ESIGN_HOST=https://na1.foxitesign.foxit.com
+
+NAMECOM_USERNAME=          # name.com Core API — HTTP Basic, username:token
+NAMECOM_API_TOKEN=         # sandbox: api.dev.name.com with `-test` credentials
 
 XANO_API_BASE=             # xano.com — see docs/xano-setup.md (4 tables, auto CRUD)
 XANO_API_TOKEN=
@@ -315,6 +358,12 @@ XANO_AUTO_SEED=false       # true seeds INC-1042 at runtime; prefer node scripts
 
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
+
+**Doctavian setup** (optional, for LIVE generation): Doctavian renders from an
+uploaded template addressed by URN, so there is a one-time step.
+`node scripts/doctavian-setup.mjs --check` verifies the credentials;
+`node scripts/doctavian-setup.mjs path/to/template.docx` uploads the template,
+prints the URN to paste into `.env`, and smoke-tests a real generation.
 
 **Demo controls** (header): one-click **Reset demo**, and failure-injection toggles
 that exercise the same graceful fallbacks as a real outage.
@@ -342,7 +391,7 @@ tagged; integrations are labelled `LIVE` only when the API actually responded.
 ## Tech
 
 Next.js 16 (App Router, Turbopack) · React 19 · TypeScript · Tailwind CSS v4 · Zod ·
-SerpApi · Nutrient DWS · Doctavian · Foxit eSign · Xano · Google Gemini · Vitest
+SerpApi · Nutrient DWS · Doctavian · Foxit eSign · name.com Core API · Xano · Google Gemini · Vitest
 
 ## License
 

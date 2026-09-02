@@ -7,15 +7,19 @@ import { extractTextViaNutrient, isNutrientConfigured, NUTRIENT_EXTRACT_ENDPOINT
 import { extractTextLocal } from "@/integrations/nutrient/local-extract";
 import type { ActivityLedger } from "@/lib/integrations/ledger";
 import { getDemoFlags } from "@/lib/orchestration/demo-controls";
+import { ClaimSubject, classifyClaim, deriveClaims } from "@/lib/agents/document-rules";
 
 export interface ExtractedClaim {
   supplierId: string;
-  refClaimId?: string;
+  /** What the claim is about — how it is matched to a supplier's stated claim. */
+  subject: ClaimSubject;
   text: string;
   confidence: number;
   status: "VERIFIED" | "UNVERIFIED" | "CONFLICT";
   conflictReason?: string;
   field: string;
+  /** The verification rule that produced this verdict. */
+  rule: string;
   documentId: string;
   mode: "LIVE" | "LOCAL";
 }
@@ -36,37 +40,6 @@ function parseFields(text: string): Record<string, string> {
   return fields;
 }
 
-// Deterministic extraction rules: claims are derived FROM extracted fields.
-function deriveClaims(docId: string, f: Record<string, string>, mode: "LIVE" | "LOCAL"): ExtractedClaim[] {
-  const base = { documentId: docId, mode };
-  switch (docId) {
-    case "nexus-business-registration":
-      return [
-        { ...base, supplierId: "SUP-B", text: `Registered entity since ${f.FORMED?.slice(0, 4) ?? "unknown"}`, confidence: 97, status: "VERIFIED", field: "FORMED" },
-        { ...base, supplierId: "SUP-B", text: "Active business registration status", confidence: 95, status: "VERIFIED", field: "STATUS" },
-      ];
-    case "nexus-product-spec":
-      return [
-        { ...base, supplierId: "SUP-B", refClaimId: "c4", text: "PX-17 direct compatibility", confidence: 96, status: "VERIFIED", field: "EQUIVALENT_TO" },
-      ];
-    case "apex-iso-9001-certificate":
-      return [
-        { ...base, supplierId: "SUP-A", refClaimId: "c1", text: "ISO 9001 Certified", confidence: 98, status: "VERIFIED", field: "CERT_NUMBER" },
-      ];
-    case "shenzhen-iso-9001-certificate":
-      return [
-        { ...base, supplierId: "SUP-C", refClaimId: "c5", text: "ISO 9001 Certified", confidence: 54, status: "UNVERIFIED", conflictReason: "Issuer not accredited; document shows REGISTRY_MATCH: NOT FOUND.", field: "REGISTRY_MATCH" },
-      ];
-    case "shenzhen-business-registration":
-      return [
-        { ...base, supplierId: "SUP-C", refClaimId: "c6", text: "Established 2018", confidence: 30, status: "CONFLICT", conflictReason: `Supplier materials claim 2018; registration shows FORMED ${f.FORMED ?? "unknown"}.`, field: "FORMED" },
-        { ...base, supplierId: "SUP-C", text: `Registered entity since ${f.FORMED?.slice(0, 4) ?? "unknown"}`, confidence: 95, status: "VERIFIED", field: "FORMED" },
-      ];
-    default:
-      return [];
-  }
-}
-
 // Nutrient DWS free tier is 50 credits total (~3 per extraction). Route only the
 // documents that carry the contradiction through DWS; the rest use local
 // extraction. Set NUTRIENT_FULL=true to run all six through Nutrient.
@@ -76,7 +49,15 @@ const NUTRIENT_PRIORITY_DOCS = new Set([
   "nexus-business-registration",
 ]);
 
-export async function runDocumentIntelligence(ledger?: ActivityLedger): Promise<DocIntelReport> {
+export interface DocIntelContext {
+  /** The component the incident is about — the equivalence rule is judged against it. */
+  affectedProduct?: string;
+}
+
+export async function runDocumentIntelligence(
+  ledger?: ActivityLedger,
+  ctx: DocIntelContext = {}
+): Promise<DocIntelReport> {
   const documents: ProcessedDocument[] = [];
   const claims: ExtractedClaim[] = [];
   let liveCount = 0;
@@ -159,7 +140,13 @@ export async function runDocumentIntelligence(ledger?: ActivityLedger): Promise<
       mode,
       url: `/docs/${doc.id}.pdf`,
     });
-    claims.push(...deriveClaims(doc.id, fields, mode));
+    if (doc.supplierId) {
+      const derived = deriveClaims(doc.type, fields, {
+        supplierId: doc.supplierId,
+        affectedProduct: ctx.affectedProduct,
+      });
+      claims.push(...derived.map((d) => ({ ...d, documentId: doc.id, mode })));
+    }
   }
 
   return {
@@ -170,33 +157,38 @@ export async function runDocumentIntelligence(ledger?: ActivityLedger): Promise<
   };
 }
 
+/**
+ * Fold document-derived verdicts into the incident.
+ *
+ * An extracted claim adjudicates a supplier's *stated* claim when both are about
+ * the same subject — matched by `classifyClaim`, so neither side has to hardcode
+ * the other's id. Anything with no counterpart is appended as new evidence.
+ */
 export function mergeDocClaims(incident: Incident, report: DocIntelReport) {
   for (const ec of report.claims) {
     const supplier = incident.alternativeSuppliers.find((s) => s.id === ec.supplierId);
     if (!supplier) continue;
-    const evidence = { documentId: ec.documentId, field: ec.field, mode: ec.mode };
-        if (ec.refClaimId) {
-      const claim = supplier.claims.find((c) => c.id === ec.refClaimId);
-      if (!claim) continue;
-      claim.confidence = ec.confidence;
-      claim.status = ec.status;
-      if (ec.conflictReason) claim.conflictReason = ec.conflictReason;
-      claim.documentEvidence = evidence;
-    } else {
-      // Idempotent: never append the same extracted claim twice on re-runs
-      const exists = supplier.claims.some((c) => c.text === ec.text);
-      if (exists) continue;
-      supplier.claims.push({
-        id: `${supplier.id}-doc-${supplier.claims.length + 1}`,
-        text: ec.text,
-        source: "Document extraction",
-        timestamp: new Date().toISOString().slice(0, 10),
-        confidence: ec.confidence,
-        status: ec.status,
-        conflictReason: ec.conflictReason,
-        documentEvidence: evidence,
-      });
+    const evidence = { documentId: ec.documentId, field: ec.field, mode: ec.mode, rule: ec.rule };
+
+    const existing = supplier.claims.find((c) => classifyClaim(c.text) === ec.subject);
+    if (existing) {
+      existing.confidence = ec.confidence;
+      existing.status = ec.status;
+      existing.conflictReason = ec.conflictReason;
+      existing.documentEvidence = evidence;
+      continue;
     }
+
+    supplier.claims.push({
+      id: `${supplier.id}-doc-${supplier.claims.length + 1}`,
+      text: ec.text,
+      source: "Document extraction",
+      timestamp: new Date().toISOString().slice(0, 10),
+      confidence: ec.confidence,
+      status: ec.status,
+      conflictReason: ec.conflictReason,
+      documentEvidence: evidence,
+    });
   }
   incident.documentsProcessed = report.documents;
 }

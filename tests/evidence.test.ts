@@ -32,7 +32,30 @@ describe("evidence engine", () => {
     expect(countAfterSecond).toBe(countAfterFirst);
 
     const post = verifyClaims(incident);
-    expect(post.verified).toBe(7);
+    expect(post.verified).toBe(8);
     expect(post.conflicts).toBe(1);
+  });
+
+  it("adjudicates the supplier's stated claims against the documents", async () => {
+    const incident = fixture();
+    const shenzhen = incident.alternativeSuppliers.find((s) => s.id === "SUP-C")!;
+
+    // Before the documents are read, both claims are the supplier's word.
+    expect(shenzhen.claims.find((c) => c.text === "Established 2018")!.documentEvidence).toBeUndefined();
+
+    mergeDocClaims(incident, await runDocumentIntelligence(undefined, { affectedProduct: incident.affectedProduct }));
+
+    const age = shenzhen.claims.find((c) => c.text === "Established 2018")!;
+    expect(age.status).toBe("CONFLICT");
+    expect(age.documentEvidence).toEqual({
+      documentId: "shenzhen-business-registration",
+      field: "FORMED",
+      mode: "LOCAL",
+      rule: "entity-age-vs-registry",
+    });
+
+    const iso = shenzhen.claims.find((c) => c.text === "ISO 9001 Certified")!;
+    expect(iso.status).toBe("UNVERIFIED");
+    expect(iso.documentEvidence?.rule).toBe("certificate-registry-match");
   });
 });

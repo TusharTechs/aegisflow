@@ -80,21 +80,33 @@ export function evaluateSupplier(supplier: Supplier, incident: Incident, weights
   const regClaim = supplier.claims.find((c) => /registered entity since/i.test(c.text));
   const regDoc = docs.find((d) => d.supplierId === supplier.id && d.type === "Business Registration");
   const ext = externalCount(incident, supplier.id);
+  // Domain footprint: a supplier whose own domain is still available to buy has no
+  // commercial web presence — independent corroboration of an identity problem.
+  const footprint = (incident.domainFootprints ?? []).find((f) => f.supplierId === supplier.id);
+  const footprintReason = footprint
+    ? `${footprint.finding} (name.com · ${footprint.mode})`
+    : "Domain footprint not checked";
+
   if (conflictClaim) {
-    dims.push({ key: "reliability", score: 40, reasons: [
+    dims.push({ key: "reliability", score: footprint?.signal === "NO_FOOTPRINT" ? 30 : 40, reasons: [
       conflictClaim.conflictReason ?? "Identity claims contradict registration records",
       "Conflicting public statements reduce trust",
+      footprintReason,
     ]});
   } else {
     const yearMatch = regClaim?.text.match(/(\d{4})/);
     const years = yearMatch ? new Date().getFullYear() - parseInt(yearMatch[1], 10) : 0;
+    const footprintAdj = footprint ? (footprint.signal === "CORROBORATED" ? 5 : -15) : 0;
     dims.push({
       key: "reliability",
-      score: clamp(65 + Math.min(9, ext * 3) + (years >= 8 ? 10 : years >= 4 ? 5 : 0) + (regDoc ? 5 : 0)),
+      score: clamp(
+        65 + Math.min(9, ext * 3) + (years >= 8 ? 10 : years >= 4 ? 5 : 0) + (regDoc ? 5 : 0) + footprintAdj
+      ),
       reasons: [
         regClaim?.text ?? "No registration claim on file",
         `${ext} external corroborating source(s)`,
         regDoc ? `Registration document processed (${regDoc.id})` : "No registration document on file",
+        footprintReason,
       ],
     });
   }

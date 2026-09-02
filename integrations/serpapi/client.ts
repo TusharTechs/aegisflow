@@ -17,7 +17,10 @@ export async function serpSearch(query: string, num = 4): Promise<SerpResult[]> 
 
   const params = new URLSearchParams({ engine: "google", q: query, num: String(num), api_key: key });
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
+  // The five queries run concurrently, so a longer ceiling costs wall-clock time
+  // only in the worst case — and an 8s cutoff was intermittently timing out the
+  // supplier queries, downgrading live results to seeded for no good reason.
+  const timeout = setTimeout(() => controller.abort(), 15_000);
 
   try {
     const res = await fetch(`https://serpapi.com/search?${params.toString()}`, {

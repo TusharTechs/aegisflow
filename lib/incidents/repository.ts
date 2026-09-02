@@ -159,6 +159,28 @@ class ResilientRepository implements IAegisRepository {
     }
   }
 
+  /**
+   * Persist the evidence payload directly, bypassing the paced queue.
+   *
+   * The queue is the right default — it keeps a rate-limited write from blocking a
+   * render. But it drops a task when a write fails, and during an investigation the
+   * burst of audit rows reliably exhausts the free tier's window, so the one row the
+   * UI reads back was the thing being thrown away. This takes the short path and
+   * reports whether it landed.
+   */
+  async saveCore(incident: Incident): Promise<boolean> {
+    if (this.hardDegraded) return false;
+    this.local.saveIncident(incident);
+    try {
+      await this.xano.saveIncidentCore(incident);
+      return true;
+    } catch (err) {
+      this.degradedReason = err instanceof Error ? err.message : String(err);
+      console.warn(`[aegisflow] Xano core save failed (${this.degradedReason}).`);
+      return false;
+    }
+  }
+
   /** For status displays: how many Xano writes are still catching up. */
   pendingWrites(): number {
     return this.writeQueue.length;
@@ -276,4 +298,15 @@ export async function resetRepository(): Promise<void> {
 export async function flushWrites(deadlineMs?: number): Promise<void> {
   const r = getRepository();
   if (r instanceof ResilientRepository) await r.flushWrites(deadlineMs);
+}
+
+/**
+ * Persist the incident's evidence payload now, and wait for it.
+ * Returns false when it could not be written (the in-memory mirror still has it).
+ */
+export async function saveIncidentCore(incident: Incident): Promise<boolean> {
+  const r = getRepository();
+  if (r instanceof ResilientRepository) return r.saveCore(incident);
+  await r.saveIncident(incident);
+  return true;
 }

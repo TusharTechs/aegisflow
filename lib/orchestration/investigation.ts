@@ -1,4 +1,4 @@
-import { appendAudit, flushWrites, getIncident, persistenceMode, persistenceNote, saveIncident, transitionIncident } from "@/lib/incidents/repository";
+import { appendAudit, flushWrites, getIncident, persistenceMode, persistenceNote, saveIncident, saveIncidentCore, transitionIncident } from "@/lib/incidents/repository";
 import { isXanoConfigured } from "@/integrations/xano/client";
 import { analyzeIncident } from "@/lib/agents/incident-analyst";
 import { runWebIntelligence, buildQueries } from "@/lib/agents/web-intelligence";
@@ -159,10 +159,13 @@ export async function* runInvestigation(id: string): AsyncGenerator<Investigatio
   await transitionIncident(id, "RECOMMENDATION_READY", "AI");
   await transitionIncident(id, "HUMAN_REVIEW", "SYSTEM", "Human review required");
 
-  // Serverless stops executing the moment the stream closes, so the paced write
-  // queue has to land before we return — otherwise the run streams perfectly and
-  // then persists nothing.
-  await flushWrites();
+  // Serverless stops executing the moment the stream closes, so anything still
+  // queued is lost. The evidence payload goes down the direct path — one request,
+  // retried — because it is what every screen reads back on reload. Audit rows
+  // drain best-effort behind it.
+  incident.state = "HUMAN_REVIEW";
+  const persisted = await saveIncidentCore(incident);
+  await flushWrites(persisted ? 4000 : 1000);
 
   yield { message: "Human review required", actor: "SYSTEM", tag: "LIVE" };
 }

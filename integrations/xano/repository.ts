@@ -91,6 +91,44 @@ export class XanoRepository implements IAegisRepository {
     return row ? this.assemble(row) : undefined;
   }
 
+  /**
+   * Write ONLY the incident row: its state and the evidence_json blob that every
+   * screen reads back (ledger, sources, documents, footprints, decision).
+   *
+   * This is deliberately one request. The supplier/claim fan-out in `saveIncident`
+   * is ~15 more, which on the free tier's 10 req/20s guarantees a 429 somewhere —
+   * and a 429 that lands on *this* row costs the Integration Activity Ledger, the
+   * Evidence view and the conflict panel. Retried once, because losing it is the
+   * difference between a demo that reloads and one that doesn't.
+   */
+  async saveIncidentCore(incident: Incident): Promise<void> {
+    const row = (await this.rows<IncidentRow>("incident")).find((r) => r.incident_key === incident.id);
+    if (!row) return;
+
+    const body = {
+      state: incident.state,
+      status: incident.status,
+      evidence_json: {
+        externalSources: incident.externalSources ?? null,
+        domainFootprints: incident.domainFootprints ?? null,
+        documentsProcessed: incident.documentsProcessed ?? null,
+        apiActivity: incident.apiActivity ?? null,
+        decision: incident.decision ?? null,
+        generatedDocument: incident.generatedDocument ?? null,
+        signature: incident.signature ?? null,
+      },
+    };
+
+    try {
+      await xano.patch(`/incident/${row.id}`, body);
+    } catch (err) {
+      if (!/429/.test(err instanceof Error ? err.message : "")) throw err;
+      // The free tier's window is 20s; wait it out once rather than lose the row.
+      await pace(Number(process.env.XANO_RETRY_DELAY_MS ?? 20_000));
+      await xano.patch(`/incident/${row.id}`, body);
+    }
+  }
+
   async saveIncident(incident: Incident): Promise<void> {
     const row = (await this.rows<IncidentRow>("incident")).find((r) => r.incident_key === incident.id);
     if (!row) return;

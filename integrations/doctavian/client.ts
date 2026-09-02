@@ -88,9 +88,16 @@ function pickUrn(json: unknown): string | undefined {
  * The agreement is filled from these exact fields — the same object the UI shows
  * and the same object the contract schema validates.
  */
+export function toDoctavianData(payload: ContractPayload) {
+  // Doctavian resolves `{!Agreement.field}` against a named collection, so the
+  // payload is wrapped the way its own sample data file is shaped:
+  // { data: { <Collection>: [ { ...fields } ] } }. See docs/doctavian/.
+  return { data: { Agreement: [payload] } };
+}
+
 export async function uploadContractData(payload: ContractPayload): Promise<string> {
   const form = new FormData();
-  const json = JSON.stringify(payload, null, 2);
+  const json = JSON.stringify(toDoctavianData(payload), null, 2);
   form.append("file", new Blob([json], { type: "application/json" }), `${payload.agreementId}.json`);
 
   const controller = new AbortController();

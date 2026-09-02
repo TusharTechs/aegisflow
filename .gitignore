@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Doctavian sample assets are downloaded, not authored here
+docs/doctavian/mission-1-*

@@ -146,13 +146,19 @@ const samplePayload = {
   unitPrice: 90.3,
   totalValue: 135450,
   deliveryDeadlineDays: 5,
+  sla: "98% on-time delivery; 24-hour disruption notice",
+  compliance: ["ISO 9001:2015", "RoHS", "CE"],
   effectiveDate: new Date().toISOString().slice(0, 10),
+  riskConditions: ["Single-source dependency during transition"],
+  contingency: "Buyer may activate a secondary supplier without penalty after 5 days.",
+  evidenceSummary: { verified: 8, conflicts: 1, confidence: 91 },
 };
 
+// Same wrapping the app uses: { data: { Agreement: [ ...fields ] } }
 const dataForm = new FormData();
 dataForm.append(
   "file",
-  new Blob([JSON.stringify(samplePayload, null, 2)], { type: "application/json" }),
+  new Blob([JSON.stringify({ data: { Agreement: [samplePayload] } }, null, 2)], { type: "application/json" }),
   "smoke-test.json"
 );
 const dataUpload = await call("POST", "/v1/documents/data/upload", { form: dataForm });

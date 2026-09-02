@@ -1,4 +1,11 @@
-import { appendAudit, flushWrites, getIncident, persistenceMode, persistenceNote, saveIncident, saveIncidentCore, transitionIncident } from "@/lib/incidents/repository";
+import {
+  appendAudit,
+  flushWrites,
+  getIncident,
+  persistenceNote,
+  saveIncidentCore,
+  transitionIncident,
+} from "@/lib/incidents/repository";
 import { isXanoConfigured } from "@/integrations/xano/client";
 import { analyzeIncident } from "@/lib/agents/incident-analyst";
 import { runWebIntelligence, buildQueries } from "@/lib/agents/web-intelligence";
@@ -121,9 +128,12 @@ export async function* runInvestigation(id: string): AsyncGenerator<Investigatio
 
   const persistStart = Date.now();
   incident.apiActivity = ledger.all();
-  await saveIncident(incident);
+  // Write for real BEFORE describing it. persistenceMode() reports the read path's
+  // current opinion, which a transient 429 can flip to LOCAL even though the direct
+  // write lands — and claiming LOCAL for rows that are demonstrably in Xano is the
+  // one kind of inaccuracy this ledger exists to prevent.
   const xanoConfigured = isXanoConfigured();
-  const xanoLive = persistenceMode() === "XANO";
+  const xanoLive = xanoConfigured && (await saveIncidentCore(incident));
   const xanoDegraded = persistenceNote();
   ledger.record({
     sponsor: "Xano",
@@ -137,7 +147,7 @@ export async function* runInvestigation(id: string): AsyncGenerator<Investigatio
       claims: incident.alternativeSuppliers.reduce((a, s) => a + s.claims.length, 0),
       audit_events: incident.auditLog.length,
     },
-    response: { mode: persistenceMode(), tables: ["incident", "supplier", "claim", "audit_event"] },
+    response: { mode: xanoLive ? "XANO" : "LOCAL", tables: ["incident", "supplier", "claim", "audit_event"] },
     mode: xanoLive ? "LIVE" : "LOCAL",
     status: xanoLive ? "ok" : "fallback",
     ms: Date.now() - persistStart,
@@ -148,7 +158,6 @@ export async function* runInvestigation(id: string): AsyncGenerator<Investigatio
         : "XANO_API_BASE not configured — normalized rows held in the in-memory system of record. Set Xano env to persist.",
   });
   incident.apiActivity = ledger.all();
-  await saveIncident(incident);
   yield await push({
     message: `Integration ledger: ${ledger.all().length} sponsor API calls recorded (${ledger.all().filter((c) => c.mode === "LIVE").length} live)`,
     actor: "SYSTEM",
@@ -164,6 +173,8 @@ export async function* runInvestigation(id: string): AsyncGenerator<Investigatio
   // retried — because it is what every screen reads back on reload. Audit rows
   // drain best-effort behind it.
   incident.state = "HUMAN_REVIEW";
+  // Second direct write: the first one predates the Xano ledger row and the two
+  // state transitions above.
   const persisted = await saveIncidentCore(incident);
   await flushWrites(persisted ? 4000 : 1000);
 

@@ -72,26 +72,6 @@ async function call(method, endpoint, { body, form } = {}) {
   return { ok: res.ok, status: res.status, json };
 }
 
-function pickUrn(json) {
-  const at = (p) =>
-    p.reduce((n, k) => (n && typeof n === "object" ? n[k] : undefined), json);
-  for (const p of [
-    ["result", "data", "files", 0, "id"],
-    ["data", "files", 0, "id"],
-    ["result", "data", "document", "urn"],
-    ["result", "data", "urn"],
-    ["result", "data", "id"],
-    ["data", "document", "urn"],
-    ["data", "urn"],
-    ["data", "id"],
-    ["urn"],
-    ["id"],
-  ]) {
-    const v = at(p);
-    if (typeof v === "string" && v) return v;
-  }
-  return undefined;
-}
 
 // ── 1. credentials ────────────────────────────────────────────────
 console.log(`\n→ ${BASE}`);

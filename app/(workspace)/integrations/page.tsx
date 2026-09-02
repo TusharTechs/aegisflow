@@ -9,7 +9,15 @@ export const dynamic = "force-dynamic";
 const CONFIG: { name: string; env: string; configured: boolean }[] = [
   { name: "SerpApi", env: "SERPAPI_API_KEY", configured: Boolean(process.env.SERPAPI_API_KEY) },
   { name: "Nutrient", env: "NUTRIENT_API_KEY", configured: Boolean(process.env.NUTRIENT_API_KEY) },
-  { name: "Doctavian", env: "DOCTAVIAN_API_KEY", configured: Boolean(process.env.DOCTAVIAN_API_KEY) },
+  {
+    name: "Doctavian",
+    env: "DOCTAVIAN_API_KEY + _ACCESS_TOKEN + _TEMPLATE_URN",
+    // All three are required: the gateway enforces X-Api-Key AND an OAuth bearer,
+    // and generation renders against an uploaded template addressed by URN.
+    configured: Boolean(
+      process.env.DOCTAVIAN_API_KEY && process.env.DOCTAVIAN_ACCESS_TOKEN && process.env.DOCTAVIAN_TEMPLATE_URN
+    ),
+  },
   { name: "Foxit", env: "FOXIT_ESIGN_CLIENT_ID", configured: Boolean(process.env.FOXIT_ESIGN_CLIENT_ID && process.env.FOXIT_ESIGN_CLIENT_SECRET) },
   { name: "name.com", env: "NAMECOM_API_TOKEN", configured: Boolean(process.env.NAMECOM_USERNAME && process.env.NAMECOM_API_TOKEN) },
   { name: "Xano", env: "XANO_API_BASE", configured: Boolean(process.env.XANO_API_BASE) },

@@ -1,5 +1,4 @@
 import {
-  appendAudit,
   flushWrites,
   getIncident,
   persistenceNote,
@@ -32,8 +31,23 @@ export async function* runInvestigation(id: string): AsyncGenerator<Investigatio
   const ledger = new ActivityLedger();
   incident.apiActivity = [];
 
+  /**
+   * Record a step in the audit stream, in memory.
+   *
+   * Deliberately not a Xano write. A run emits ~14 steps, and a row each blows
+   * straight through the free tier's 10-requests-per-20-seconds budget — starving
+   * the one write that carries the whole run, which then fails and leaves the
+   * investigation looking like it never happened. The stream is persisted with the
+   * evidence in a single request at the end; the append-only `audit_event` table
+   * still receives the human authorization events, which are the ones that matter
+   * for an audit trail.
+   */
   const push = async (step: InvestigationStep): Promise<InvestigationStep> => {
-    await appendAudit(id, step.message, step.actor);
+    incident.auditLog.push({
+      timestamp: new Date().toISOString(),
+      event: step.message,
+      actor: step.actor,
+    });
     return step;
   };
 
@@ -165,6 +179,8 @@ export async function* runInvestigation(id: string): AsyncGenerator<Investigatio
   });
   await pace(200);
 
+  // Both hops are legal and both are recorded; they run against the in-memory
+  // mirror, and the single core save below is what makes them durable.
   await transitionIncident(id, "RECOMMENDATION_READY", "AI");
   await transitionIncident(id, "HUMAN_REVIEW", "SYSTEM", "Human review required");
 

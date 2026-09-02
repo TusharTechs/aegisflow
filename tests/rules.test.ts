@@ -220,3 +220,50 @@ describe("extractor-independence (real Nutrient DWS output)", () => {
     expect(readField({ FORMED: "   " }, "FORMED")).toBeUndefined();
   });
 });
+
+/**
+ * Regression: extraction splits words, not just field names.
+ *
+ * DWS returned `EQUIVALENT_TO: 'PX-17 Power C ontroller'` for a datasheet that reads
+ * "PX-17 Power Controller" — a space inserted mid-word from glyph kerning. That
+ * silently flipped the RECOMMENDED supplier's compatibility claim to UNVERIFIED and
+ * cost it points, with nothing in the UI hinting the cause was an extraction artefact.
+ * The same hazard applies to every value a rule matches on.
+ */
+describe("field values survive mid-word splits from extraction", () => {
+  it("credits equivalence when the extractor split the product name", () => {
+    const c = deriveClaims(SPEC, { EQUIVALENT_TO: "PX-17 Power C ontroller" }, ctx)
+      .find((x) => x.subject === "product-compatibility")!;
+    expect(c.status).toBe("VERIFIED");
+  });
+
+  it("still rejects equivalence to a genuinely different part", () => {
+    const c = deriveClaims(SPEC, { EQUIVALENT_TO: "QR-99 R elay Module" }, ctx)
+      .find((x) => x.subject === "product-compatibility")!;
+    expect(c.status).toBe("UNVERIFIED");
+  });
+
+  it("reads a split NOT FOUND as an empty registry lookup", () => {
+    const iso = deriveClaims(
+      CERTIFICATE,
+      { ...shenzhenCertificate, REGISTRY_MATCH: "NOT F OUND" },
+      ctx
+    ).find((x) => x.subject === "iso-9001")!;
+    expect(iso.status).toBe("UNVERIFIED");
+  });
+
+  it("recognises an accredited issuer whose name was split", () => {
+    const iso = deriveClaims(
+      CERTIFICATE,
+      { ...shenzhenCertificate, REGISTRY_MATCH: "SR-2024-114", ISSUER: "TU V Rheinland" },
+      ctx
+    ).find((x) => x.subject === "iso-9001")!;
+    expect(iso.status).toBe("VERIFIED");
+  });
+
+  it("reads a split Active status as active", () => {
+    const st = deriveClaims(REGISTRATION, { ...shenzhenRegistration, STATUS: "Act ive" }, ctx)
+      .find((x) => x.subject === "registration-status")!;
+    expect(st.status).toBe("VERIFIED");
+  });
+});

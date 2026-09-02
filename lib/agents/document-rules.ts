@@ -63,6 +63,18 @@ const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
  */
 const canonical = (key: string) => key.toUpperCase().replace(/[^A-Z0-9]/g, "");
 
+/**
+ * Strip everything but letters and digits.
+ *
+ * Extraction inserts spaces INSIDE words depending on glyph kerning — DWS returned
+ * `PX-17 Power C ontroller` for a datasheet that reads "PX-17 Power Controller", and
+ * the same can happen to `NOT FOUND`, an issuer name or `Active`. Collapsing runs of
+ * spaces does not help, because the word is already split. Every rule that matches
+ * on a field's CONTENT compares this form; anything shown to a human uses the raw
+ * value, so the UI still quotes the document verbatim.
+ */
+const compact = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
 /** Read a field by any of its accepted spellings. */
 export function readField(fields: ExtractedFields, ...names: string[]): string | undefined {
   const index = new Map<string, string>();
@@ -88,12 +100,10 @@ export function yearOf(value?: string): number | undefined {
  * An issuer outside this set is not proof of fraud — it is grounds to withhold
  * VERIFIED until something independent corroborates it.
  */
-const ACCREDITED_ISSUER = /t[uü]v|sgs|bureau\s*veritas|dnv|intertek|lloyd'?s|bsi|dekra|ul\s*solutions|afnor|kiwa/i;
+const ACCREDITED_ISSUER = /tuv|sgs|bureauveritas|dnv|intertek|lloyds|bsi|dekra|ulsolutions|afnor|kiwa/;
 
 /** A registry lookup that came back empty, however the extractor phrased it. */
-const NEGATIVE_REGISTRY = /\b(not\s*found|no\s*match|no\s*record|none|absent|n\/?a|unknown)\b/i;
-
-const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const NEGATIVE_REGISTRY = /^(notfound|nomatch|norecord|none|absent|na|unknown|nil)$/;
 
 /**
  * Which underlying assertion a claim is about. Used to match a claim extracted
@@ -131,7 +141,7 @@ const entityAgeVsRegistry: VerificationRule = {
 
     const out: DerivedClaim[] = [];
     const status = readField(f, "STATUS");
-    const statusActive = /\bactive\b/i.test(status ?? "");
+    const statusActive = /active/.test(compact(status ?? ""));
 
     out.push({
       supplierId: ctx.supplierId,
@@ -205,7 +215,7 @@ const certificateRegistryMatch: VerificationRule = {
     if (readField(f, "CERT_NUMBER", "CERTIFICATE_NUMBER")) confidence += 3;
 
     const registryMatch = readField(f, "REGISTRY_MATCH", "REGISTRY_LOOKUP");
-    if (registryMatch !== undefined && NEGATIVE_REGISTRY.test(registryMatch)) {
+    if (registryMatch !== undefined && NEGATIVE_REGISTRY.test(compact(registryMatch))) {
       status = "UNVERIFIED";
       confidence = confidence * 0.6;
       anchorField = "REGISTRY_MATCH";
@@ -214,7 +224,7 @@ const certificateRegistryMatch: VerificationRule = {
 
     const issuer = (readField(f, "ISSUER", "ISSUING_BODY") ?? "").trim();
     if (issuer) {
-      if (ACCREDITED_ISSUER.test(issuer)) {
+      if (ACCREDITED_ISSUER.test(compact(issuer))) {
         confidence += 5;
       } else {
         status = "UNVERIFIED";
@@ -265,7 +275,7 @@ const productEquivalence: VerificationRule = {
     const equivalent = readField(f, "EQUIVALENT_TO", "EQUIVALENT", "CROSS_REFERENCE");
     if (!equivalent || !ctx.affectedProduct) return [];
 
-    const matches = norm(equivalent).includes(norm(ctx.affectedProduct));
+    const matches = compact(equivalent).includes(compact(ctx.affectedProduct));
     return [
       {
         supplierId: ctx.supplierId,

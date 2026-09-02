@@ -1,0 +1,31 @@
+%PDF-1.4
+1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
+3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj
+4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj
+5 0 obj << /Length 369 >> stream
+BT /F1 10 Tf 50 780 Td 14 TL
+(NX-P17 POWER CONTROLLER - TECHNICAL DATASHEET) Tj T*
+(DOC_TYPE: Product Specification) Tj T*
+(MODEL: NX-P17) Tj T*
+(EQUIVALENT_TO: PX-17 Power Controller) Tj T*
+(INPUT_VOLTAGE: 24V DC) Tj T*
+(OUTPUT_CHANNELS: 4) Tj T*
+(OPERATING_TEMP: -40 to 85 C) Tj T*
+(MTBF: 120000 h) Tj T*
+(COMPLIANCE: CE, RoHS) Tj T*
+(DATASHEET_REV: 2025-11) Tj T*
+ET
+endstream endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000311 00000 n 
+trailer << /Size 6 /Root 1 0 R >>
+startxref
+731
+%%EOF

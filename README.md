@@ -71,13 +71,24 @@ verification.
 
 ## Screenshots
 
+**Four independent systems disagree with the cheapest supplier — and each verdict
+names the rule that produced it.**
+
+![Evidence conflict](docs/screenshots/03-conflict.png)
+
+**Drag the cost weight to maximum. The conflicted supplier still caps at 49/100.**
+
+![Why this recommendation](docs/screenshots/04-why.png)
+
 | | |
 |---|---|
 | ![Landing](docs/screenshots/01-landing.png) **The bet** | ![Incident](docs/screenshots/02-incident.png) **The incident console** |
-| ![Why](docs/screenshots/03-why.png) **Why this recommendation — re-weight the model live** | ![Integrations](docs/screenshots/04-integrations.png) **Integration Activity Ledger — every call on the record** |
-| ![Evidence](docs/screenshots/05-evidence.png) **Claim-level provenance** | ![Audit](docs/screenshots/06-audit.png) **Append-only audit trail** |
+| ![Integrations](docs/screenshots/05-integrations.png) **Every sponsor call on the record** | ![Evidence](docs/screenshots/06-evidence.png) **Claim-level provenance** |
+| ![Audit](docs/screenshots/07-audit.png) **Append-only audit trail** | ![Business](docs/screenshots/08-business.png) **Why it is a company** |
 
-Regenerate from a running instance: `node scripts/capture-screenshots.mjs`.
+Captured against a live run — 15/15 ledger calls LIVE, all six documents through
+Nutrient DWS. Regenerate with `node scripts/capture-screenshots.mjs` (read-only;
+add `--local` to point at localhost).
 
 ---
 
@@ -190,7 +201,7 @@ grep -rn "REGISTRY_MATCH\|ABOUT_PAGE_CLAIM\|appliesTo" lib/agents/document-rules
 
 ```bash
 npm install && node scripts/generate-pdfs.mjs && npm run dev   # runs fully offline with zero keys
-npm test                                                        # 61 passing
+npm test                                                        # 67 passing
 ```
 
 ---
@@ -323,7 +334,7 @@ npm install
 node scripts/generate-pdfs.mjs      # the six evidence PDFs
 cp .env.example .env.local           # optional — add sponsor keys to go LIVE
 npm run dev                          # http://localhost:3000
-npm test                             # 61 passing
+npm test                             # 67 passing
 ```
 
 With no keys the full workflow runs on honest fallbacks and every screen stays

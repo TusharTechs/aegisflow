@@ -40,16 +40,19 @@ Rules match on document *type*, then read *fields*.
 npx vitest run tests/rules.test.ts
 ```
 
-17 tests. Same rule code, different extracted values, different outcomes — including
+22 tests. Same rule code, different extracted values, different outcomes — including
 `FORMED: 2018` making the conflict disappear entirely.
 
 **3. It survives a change of extractor.**
 
-Nutrient DWS drops underscores from field names inconsistently — `REGISTRY_MATCH`
-survives on one certificate while the same run yields `VALIDUNTIL` and
-`ABOUTPAGECLAIM` on another. The `extractor-independence` block in that test file is
-built from DWS's verbatim output and asserts Nutrient-extracted and locally-extracted
-text reach identical verdicts.
+Extraction mangles text in two ways, and both were live bugs before they were tests.
+DWS drops underscores from field NAMES inconsistently — `REGISTRY_MATCH` survives on
+one certificate while the same run yields `VALIDUNTIL` and `ABOUTPAGECLAIM` on
+another. It also inserts spaces inside WORDS from glyph kerning: it returned
+`PX-17 Power C ontroller` for a datasheet reading "PX-17 Power Controller". Left
+unhandled, the first silently dropped the founding-year conflict and the second
+downgraded the recommended supplier. Both blocks in that test file are built from
+DWS's verbatim output and assert the verdicts hold either way.
 
 ---
 
@@ -107,7 +110,7 @@ Doctavian render, not a mockup. Two things to notice:
 git clone https://github.com/TusharTechs/aegisflow && cd aegisflow
 npm install && node scripts/generate-pdfs.mjs
 npm run dev            # http://localhost:3000
-npm test               # 62 passing
+npm test               # 67 passing
 ```
 
 The full workflow runs end to end on honest fallbacks. Every screen stays usable and

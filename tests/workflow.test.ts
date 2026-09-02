@@ -40,3 +40,20 @@ describe("workflow + audit", () => {
     expect(payload.evidenceSummary.conflicts).toBe(1);
   });
 });
+describe("a full investigation lands in HUMAN_REVIEW", () => {
+  it("chains its own transitions to completion", async () => {
+    // Regression: the investigation ends by chaining
+    // INVESTIGATING -> RECOMMENDATION_READY -> HUMAN_REVIEW. transitionIncident
+    // re-reads the incident on each step, so anything that serves a stale copy
+    // mid-chain makes the second hop illegal (INVESTIGATING -> HUMAN_REVIEW is not
+    // a valid move) and the run ends silently with the state never advancing —
+    // evidence persisted, workflow stuck, "Run Response" still on screen.
+    const { runInvestigation } = await import("@/lib/orchestration/investigation");
+    for await (const _ of runInvestigation("INC-1042")) void _;
+
+    const incident = await getIncident("INC-1042");
+    expect(incident?.state).toBe("HUMAN_REVIEW");
+    expect(incident?.decision).toBeTruthy();
+    expect((incident?.apiActivity ?? []).length).toBeGreaterThan(0);
+  });
+});

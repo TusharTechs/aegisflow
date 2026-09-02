@@ -183,6 +183,7 @@ class ResilientRepository implements IAegisRepository {
   async saveCore(incident: Incident): Promise<boolean> {
     if (this.hardDegraded) return false;
     this.local.saveIncident(incident);
+    this.hydrated.set(incident.id, Date.now());
     try {
       await this.xano.saveIncidentCore(incident);
       return true;
@@ -243,6 +244,11 @@ class ResilientRepository implements IAegisRepository {
 
   async saveIncident(incident: Incident): Promise<void> {
     await this.local.saveIncident(incident);
+    // This instance just wrote, so its mirror is ahead of Xano — do not let the
+    // hydration TTL pull the older row back over it. Without this, a transition
+    // chain can re-read stale state mid-sequence and then fail its own guard
+    // (INVESTIGATING -> HUMAN_REVIEW is not a legal move).
+    this.hydrated.set(incident.id, Date.now());
     const snapshot = structuredClone(incident);
     this.enqueueWrite("save", () => this.xano.saveIncident(snapshot));
   }

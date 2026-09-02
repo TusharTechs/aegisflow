@@ -90,12 +90,15 @@ export class XanoRepository implements IAegisRepository {
   private cache = new Map<string, { at: number; data: unknown[] }>();
   private seeding: Promise<void> | null = null;
 
-  private async rows<T>(table: string): Promise<T[]> {
+  private async rows<T>(table: string, { fresh = false } = {}): Promise<T[]> {
     const hit = this.cache.get(table);
-    if (hit && Date.now() - hit.at < 4000) return hit.data as T[];
+    if (!fresh && hit && Date.now() - hit.at < 4000) return hit.data as T[];
     const res = await xano.get(`/${table}`);
     const data = (Array.isArray(res) ? res : (res?.items ?? [])) as unknown[];
-    this.cache.set(table, { at: Date.now(), data });
+    // Never cache an empty result. A rate-limited or oddly-shaped response coerces
+    // to [] here, and caching that poisons every lookup for the next 4s — including
+    // the row lookup a write depends on.
+    if (data.length) this.cache.set(table, { at: Date.now(), data });
     return data as T[];
   }
 
@@ -144,8 +147,14 @@ export class XanoRepository implements IAegisRepository {
    * difference between a demo that reloads and one that doesn't.
    */
   async saveIncidentCore(incident: Incident): Promise<void> {
-    const row = (await this.rows<IncidentRow>("incident")).find((r) => r.incident_key === incident.id);
-    if (!row) return;
+    // Read fresh: this is the write that carries the whole run, and a cached (or
+    // transiently empty) row list would turn it into a silent no-op.
+    const row = (await this.rows<IncidentRow>("incident", { fresh: true })).find(
+      (r) => r.incident_key === incident.id
+    );
+    // Absence here is a failure, not a nothing-to-do. Returning quietly is how a
+    // completed investigation vanished: the caller saw success and moved on.
+    if (!row) throw new Error(`Xano has no incident row for ${incident.id} (read returned ${"empty or unmatched"})`);
 
     const body = {
       state: incident.state,

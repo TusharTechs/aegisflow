@@ -50,9 +50,10 @@ function parseFields(text: string): Record<string, string> {
   return fields;
 }
 
-// Nutrient DWS free tier is 50 credits total (~3 per extraction). Route only the
-// documents that carry the contradiction through DWS; the rest use local
-// extraction. Set NUTRIENT_FULL=true to run all six through Nutrient.
+// An extraction costs ~3 DWS credits. By default only the documents that carry the
+// contradiction go through DWS, so the app stays usable on a small credit grant;
+// NUTRIENT_FULL=true routes all six. The default is deliberately the conservative
+// one — someone cloning this repo gets a free tier, not an event grant.
 const NUTRIENT_PRIORITY_DOCS = new Set([
   "shenzhen-iso-9001-certificate",
   "shenzhen-business-registration",
@@ -138,7 +139,7 @@ export async function runDocumentIntelligence(
             : nutrientFailInjected
               ? "Nutrient failure injected via demo control — local PDF text extraction used."
               : routedLocal
-                ? "Routed to local extraction to conserve Nutrient DWS credits (free tier: 50). The conflict-bearing documents go through DWS; set NUTRIENT_FULL=true to run all six."
+                ? "Routed to local extraction to conserve Nutrient DWS credits — the conflict-bearing documents go through DWS. Set NUTRIENT_FULL=true to run all six."
                 : "NUTRIENT_API_KEY not configured — local PDF text extraction used. Set the key to run this via Nutrient DWS.",
     });
     documents.push({

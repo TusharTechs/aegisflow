@@ -19,18 +19,50 @@ interface ClaimRow {
 }
 interface AuditRow { incident_id: number; event_ts: string; event: string; actor: string; }
 
-type EvidenceJson = Partial<
-  Pick<
-    Incident,
-    | "externalSources"
-    | "domainFootprints"
-    | "documentsProcessed"
-    | "apiActivity"
-    | "decision"
-    | "generatedDocument"
-    | "signature"
-  >
-> | null;
+type EvidenceJson =
+  | (Partial<
+      Pick<
+        Incident,
+        | "externalSources"
+        | "domainFootprints"
+        | "documentsProcessed"
+        | "apiActivity"
+        | "decision"
+        | "generatedDocument"
+        | "signature"
+      >
+    > & {
+      /**
+       * Latest computed verdicts, overlaid onto the normalised rows on read.
+       *
+       * The `supplier` and `claim` tables hold the entities and are the schema the
+       * app is built on. But refreshing them is ~15 requests, and the free tier's
+       * 10 req/20s window means some of those always fail — leaving the UI showing
+       * verdicts from an older run. This rides along in the single incident-row
+       * write, so what a screen displays is always what the last run actually
+       * computed, while the paced writes catch the tables up behind it.
+       */
+      verdicts?: SupplierVerdict[] | null;
+    })
+  | null;
+
+interface SupplierVerdict {
+  supplierKey: string;
+  riskScore: number;
+  recommendation: boolean;
+  recommendationReasoning: string;
+  claims: Claim[];
+}
+
+function toVerdicts(incident: Incident): SupplierVerdict[] {
+  return incident.alternativeSuppliers.map((s) => ({
+    supplierKey: s.id,
+    riskScore: s.riskScore,
+    recommendation: s.recommendation ?? false,
+    recommendationReasoning: s.recommendationReasoning ?? "",
+    claims: s.claims,
+  }));
+}
 
 /**
  * Talks to Xano's *default* auto-generated CRUD endpoints only — GET (list),
@@ -109,6 +141,7 @@ export class XanoRepository implements IAegisRepository {
       state: incident.state,
       status: incident.status,
       evidence_json: {
+        verdicts: toVerdicts(incident),
         externalSources: incident.externalSources ?? null,
         domainFootprints: incident.domainFootprints ?? null,
         documentsProcessed: incident.documentsProcessed ?? null,
@@ -137,6 +170,7 @@ export class XanoRepository implements IAegisRepository {
       state: incident.state,
       status: incident.status,
       evidence_json: {
+        verdicts: toVerdicts(incident),
         externalSources: incident.externalSources ?? null,
         domainFootprints: incident.domainFootprints ?? null,
         documentsProcessed: incident.documentsProcessed ?? null,
@@ -234,6 +268,17 @@ export class XanoRepository implements IAegisRepository {
       }));
 
     const ev: NonNullable<EvidenceJson> = row.evidence_json ?? {};
+
+    // Overlay the last computed verdicts onto the normalised rows. Present only
+    // when a run has written them; otherwise the tables stand on their own.
+    for (const v of ev.verdicts ?? []) {
+      const supplier = suppliers.find((s) => s.id === v.supplierKey);
+      if (!supplier) continue;
+      supplier.riskScore = v.riskScore;
+      supplier.recommendation = v.recommendation;
+      supplier.recommendationReasoning = v.recommendationReasoning;
+      if (v.claims?.length) supplier.claims = v.claims;
+    }
 
     return {
       id: row.incident_key,

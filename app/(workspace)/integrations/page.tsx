@@ -67,10 +67,10 @@ export default async function IntegrationsPage() {
                     <td className="py-3 text-right">
                       <Badge variant={configured ? "success" : xanoDegraded ? "warning" : "muted"}>
                         {configured
-                          ? "LIVE — key set"
+                          ? "CONFIGURED"
                           : xanoDegraded
                             ? "CONFIGURED — fell back this run"
-                            : "FALLBACK — no key"}
+                            : "NOT CONFIGURED"}
                       </Badge>
                     </td>
                   </tr>
@@ -79,8 +79,11 @@ export default async function IntegrationsPage() {
             </tbody>
           </table>
           <p className="mt-3 text-xs text-muted-foreground">
-            With no keys set, the full workflow still runs end to end on honest local fallbacks — every screen stays
-            usable for review. Add a key and that path switches to LIVE automatically on the next run.
+            <span className="font-medium text-foreground">CONFIGURED means a key is present, not that the call
+            succeeded.</span>{" "}
+            Whether an API actually answered is decided by the run, and the ledger below is the record — each entry is
+            tagged LIVE, LOCAL or DEMO SEEDED by what really happened. With no keys at all the full workflow still runs
+            end to end on honest fallbacks and every screen stays usable.
           </p>
         </CardContent>
       </Card>

@@ -13,6 +13,7 @@
  *   node scripts/demo-drive.mjs --manual-sign  # pause so you click Sign yourself
  *   node scripts/demo-drive.mjs --rehearse     # half-length, to check it runs
  *   node scripts/demo-drive.mjs --delay 15     # seconds of lead-in (default 10)
+ *   node scripts/demo-drive.mjs --no-wait      # skip the Enter prompt, close at end
  *
  * First run downloads Chromium: npx playwright install chromium
  *
@@ -37,6 +38,8 @@ const REHEARSE = has("--rehearse");
 const SCALE = REHEARSE ? 0.5 : 1;
 /** Lead-in after the browser opens: full-screen it and park the cursor off-frame. */
 const DELAY = Math.max(0, Number(argOf("--delay", "10")));
+/** Start straight into the lead-in and exit cleanly — for unattended launches. */
+const NO_WAIT = has("--no-wait");
 
 const SIGNER = { name: "Tushar Agarwal", title: "VP Supply Chain Risk", email: "" };
 
@@ -245,11 +248,11 @@ AegisFlow demo driver
 The narration above is what fits each scene at speaking pace — copy it now if you
 want it beside you in CapCut; the timings do not move between runs.
 
-Press Enter and the browser opens on the landing page. You then get ${DELAY}s to
+${NO_WAIT ? "Starting now" : "Press Enter and"} the browser opens on the landing page. You then get ${DELAY}s to
 full-screen it, start your recorder, and move the cursor off the frame — the
 clock does not start until the countdown ends.
 `);
-await new Promise((r) => process.stdin.once("data", r));
+if (!NO_WAIT) await new Promise((r) => process.stdin.once("data", r));
 
 const { chromium } = await import("playwright").catch(() => {
   console.error(
@@ -440,5 +443,10 @@ SCENES.forEach((s, i) => {
   );
   from = s.end;
 });
-console.log(`\nTotal ${T(clock())}. Stop the recorder. Ctrl-C to close the browser.\n`);
+console.log(`\nTotal ${T(clock())}. Stop the recorder.\n`);
+if (NO_WAIT) {
+  await browser.close().catch(() => {});
+  process.exit(0);
+}
+console.log("Ctrl-C to close the browser.\n");
 await new Promise(() => {});

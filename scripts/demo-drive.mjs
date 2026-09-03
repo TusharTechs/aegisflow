@@ -179,6 +179,32 @@ async function slide(page, index, to, steps = 16) {
  * the run — so the stream says "Human review required" while the page still shows
  * the pre-run state. Reloading is the reliable signal.
  */
+/**
+ * Click "Run Response" and make sure it actually took.
+ *
+ * Next renders the button server-side, so Playwright can click it before React has
+ * hydrated and attached the handler — the click lands on a dead control, the run
+ * never starts, and the driver then waits out its whole budget staring at an
+ * Investigating page. The button unmounts once the run begins, so its disappearance
+ * is the signal that the click registered; anything else means try again.
+ */
+async function startInvestigation(page, attempts = 4) {
+  const btn = 'button:has-text("Run Response")';
+  for (let i = 1; i <= attempts; i++) {
+    await page.waitForSelector(btn, { state: "visible", timeout: 30_000 });
+    // Give hydration a beat on the first try; later tries have already waited.
+    await sleep(i === 1 ? 1500 : 500);
+    await page.click(btn).catch(() => {});
+    try {
+      await page.waitForSelector(btn, { state: "detached", timeout: 6000 });
+      return;
+    } catch {
+      console.log(`      · Run Response did not take (attempt ${i}) — retrying`);
+    }
+  }
+  throw new Error('"Run Response" never started — the button stayed on screen after 4 clicks');
+}
+
 async function waitForConflictPanel(page, budgetMs = 90_000) {
   const panel = 'h2:has-text("Evidence conflict")';
   const deadline = Date.now() + budgetMs;
@@ -269,14 +295,16 @@ try {
   // 2 — the incident
   mark(SCENES[1].title);
   await page.goto(`${BASE}/incidents/${INCIDENT}`, { waitUntil: "networkidle" });
+  // The run button is a client component; let it hydrate before scene 3 clicks it.
+  await page.waitForSelector('button:has-text("Run Response")', { timeout: 30_000 }).catch(() => {});
   await sleep(1200 * SCALE);
   await spotlight(page, 'div.rounded-lg.border:has-text("Inventory remaining")', 1800);
   await holdUntil(SCENES[1].end, SCENES[1].title);
 
   // 3 — the investigation (the one variable-length scene)
   mark(SCENES[2].title);
-  await page.click('button:has-text("Run Response")');
-  await sleep(1000 * SCALE);
+  await startInvestigation(page);
+  await sleep(700 * SCALE);
   await reveal(page, 'div.rounded-lg.border:has-text("AI response status")');
   await waitForConflictPanel(page);
   await holdUntil(SCENES[2].end, SCENES[2].title);

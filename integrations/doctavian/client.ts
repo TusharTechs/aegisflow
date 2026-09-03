@@ -16,13 +16,16 @@ import { AGREEMENT_TEMPLATE_FILENAME, buildAgreementTemplateDocx } from "@/lib/d
  *   X-Api-Key       the subscription key issued with the account
  *   Authorization   a Microsoft OAuth2 bearer (authorization_code + PKCE)
  *
- * The OAuth flow is interactive by design, so the bearer is supplied via env
- * rather than minted here. The Postman collection Doctavian ships has the login
- * built in — run "Get New Access Token" once and paste the result.
+ * The sign-in is interactive by design, so the first token comes from env. With a
+ * refresh token present, later ones are minted here without a browser.
  *
  *   DOCTAVIAN_API_BASE       https://demo.api.doctavian.com
  *   DOCTAVIAN_API_KEY        subscription key
- *   DOCTAVIAN_ACCESS_TOKEN   Microsoft OAuth bearer
+ *   DOCTAVIAN_ACCESS_TOKEN   Microsoft OAuth bearer (expires in ~1h)
+ *   DOCTAVIAN_REFRESH_TOKEN  optional, and strongly preferred — the collection
+ *                            requests `offline_access`, so the login also issues a
+ *                            refresh token. With it set, an expired bearer renews
+ *                            itself instead of failing mid-demo.
  *
  * There is no template URN to configure: the demo environment consumes an
  * uploaded template on first use, so one is built and uploaded per generation.
@@ -39,14 +42,73 @@ const isSet = (v?: string) => Boolean(v && v.trim());
 
 export function isDoctavianConfigured(): boolean {
   // No template URN needed: the demo environment consumes an uploaded template on
-  // first use, so one is built and uploaded per generation.
-  return isSet(process.env.DOCTAVIAN_API_KEY) && isSet(process.env.DOCTAVIAN_ACCESS_TOKEN);
+  // first use, so one is built and uploaded per generation. Either token will do —
+  // a refresh token is better, because it does not go stale mid-demo.
+  return (
+    isSet(process.env.DOCTAVIAN_API_KEY) &&
+    (isSet(process.env.DOCTAVIAN_ACCESS_TOKEN) || isSet(process.env.DOCTAVIAN_REFRESH_TOKEN))
+  );
 }
 
-function headers(extra: Record<string, string> = {}): Record<string, string> {
+const AUTH_TOKEN_ENDPOINT = `${BASE}/public/v1/auth/microsoft/token`;
+/** From the Postman collection — the public client id of Doctavian's own app. */
+const AUTH_CLIENT_ID = process.env.DOCTAVIAN_CLIENT_ID || "11e71170-3499-43f3-b878-7df343f43d37";
+
+let cached: { token: string; expiresAt: number } | null = null;
+
+/**
+ * Exchange the refresh token for a fresh bearer.
+ *
+ * Doctavian has no service-to-service grant for this hackathon — a token must trace
+ * back to a real user's sign-in. But the collection asks for `offline_access`, so
+ * that sign-in also yields a refresh token, and exchanging it needs no browser. That
+ * is the difference between a demo that survives an hour and one that does not.
+ */
+async function refreshAccessToken(): Promise<string | null> {
+  const refresh = process.env.DOCTAVIAN_REFRESH_TOKEN?.trim();
+  if (!refresh) return null;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const res = await fetch(AUTH_TOKEN_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: refresh,
+        client_id: AUTH_CLIENT_ID,
+      }),
+      signal: controller.signal,
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || typeof json?.access_token !== "string") {
+      console.warn(
+        `[aegisflow] Doctavian token refresh failed (${json?.error_description ?? json?.error ?? res.status}).`
+      );
+      return null;
+    }
+    // Renew a minute early so a call never starts on a token about to lapse.
+    cached = { token: json.access_token, expiresAt: Date.now() + ((json.expires_in ?? 3600) - 60) * 1000 };
+    return cached.token;
+  } catch (err) {
+    console.warn(`[aegisflow] Doctavian token refresh error (${err instanceof Error ? err.message : "unknown"}).`);
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/** A refreshed token if we have one, else whatever was pasted into the env. */
+async function bearer(): Promise<string> {
+  if (cached && cached.expiresAt > Date.now()) return cached.token;
+  return (await refreshAccessToken()) ?? process.env.DOCTAVIAN_ACCESS_TOKEN ?? "";
+}
+
+async function headers(extra: Record<string, string> = {}): Promise<Record<string, string>> {
   return {
     "X-Api-Key": process.env.DOCTAVIAN_API_KEY!,
-    Authorization: `Bearer ${process.env.DOCTAVIAN_ACCESS_TOKEN!}`,
+    Authorization: `Bearer ${await bearer()}`,
     ...extra,
   };
 }
@@ -56,7 +118,7 @@ async function ensureOk(res: Response, what: string): Promise<unknown> {
     const detail = await res.text().catch(() => "");
     const hint =
       res.status === 401
-        ? " — DOCTAVIAN_ACCESS_TOKEN is missing or expired; mint a fresh one from the Doctavian Postman collection."
+        ? " — the bearer is missing or expired. Set DOCTAVIAN_REFRESH_TOKEN so it renews itself, or paste a fresh DOCTAVIAN_ACCESS_TOKEN."
         : "";
     throw new Error(`Doctavian ${what} HTTP ${res.status}${hint}${detail ? ` — ${detail.slice(0, 200)}` : ""}`);
   }
@@ -115,7 +177,7 @@ async function uploadFile(endpoint: string, blob: Blob, filename: string, what: 
   try {
     const res = await fetch(endpoint, {
       method: "POST",
-      headers: headers(),
+      headers: await headers(),
       body: form,
       signal: controller.signal,
     });
@@ -198,7 +260,7 @@ export async function generateViaDoctavian(
   try {
     const res = await fetch(DOCTAVIAN_GENERATE_ENDPOINT, {
       method: "POST",
-      headers: headers({ "Content-Type": "application/json" }),
+      headers: await headers({ "Content-Type": "application/json" }),
       body: JSON.stringify(body),
       signal: controller.signal,
     });

@@ -84,5 +84,10 @@ if (check.status === 401) {
 }
 if (!check.ok) die(`Template list failed: HTTP ${check.status}\n${JSON.stringify(check.json, null, 2).slice(0, 600)}`);
 console.log("✓ credentials accepted (X-Api-Key + OAuth bearer)");
+console.log(
+  process.env.DOCTAVIAN_REFRESH_TOKEN?.trim()
+    ? "✓ DOCTAVIAN_REFRESH_TOKEN set — the bearer renews itself"
+    : "! no DOCTAVIAN_REFRESH_TOKEN — this bearer expires in ~1h and the demo will\n  fall back to a local render when it does"
+);
 
 console.log("\nDoctavian is ready. The agreement template is built and uploaded per run —\nnothing further to configure.\n");

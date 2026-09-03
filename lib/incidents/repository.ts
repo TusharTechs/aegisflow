@@ -76,7 +76,7 @@ class ResilientRepository implements IAegisRepository {
    * read on every render.
    */
   private hydrated = new Map<string, number>();
-  private readonly hydrationTtlMs = Number(process.env.XANO_HYDRATION_TTL_MS ?? 60000);
+  private readonly hydrationTtlMs = Number(process.env.XANO_HYDRATION_TTL_MS ?? 12000);
   /** Only audit rows queue now — incident saves are written directly. */
   private writeQueue: Array<{ kind: "save" | "audit"; run: () => Promise<void> }> = [];
   private draining: Promise<void> | null = null;

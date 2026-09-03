@@ -306,13 +306,19 @@ async function waitForConflictPanel(page, budgetMs = 150_000) {
     if (page.isClosed()) throw new Error("the browser window was closed");
     if (await page.locator(panel).count()) return;
 
-    // Reload on a plain interval, NOT gated on the page looking finished. Gating was
-    // the bug behind three dead takes: when router.refresh() lands on an instance
-    // that missed the write, the page renders the PRE-run state, so the "run
-    // finished" marker never appears, so the reload never fired — and the loop
-    // polled a dead page until it timed out while the data sat in Xano and every
-    // other request rendered it fine.
-    if (Date.now() - reloadedAt > 3000) {
+    // Reload only while nothing is streaming.
+    //
+    // The investigation arrives over SSE, and page.reload() aborts that fetch — so
+    // reloading on a blind interval killed the run a few seconds after it started,
+    // every time, and the console then had nothing to show. Gating on "the page
+    // says it finished" was equally wrong: a page that never received the stream
+    // never says anything.
+    //
+    // The console renders a spinner for exactly as long as the request is open, so
+    // its absence means there is no run to protect — either it finished and this
+    // page is stale, or the click never took. Both want a reload.
+    const streaming = await page.locator(".animate-spin").count();
+    if (!streaming && Date.now() - reloadedAt > 3000) {
       reloadedAt = Date.now();
       await page.reload({ waitUntil: "networkidle" }).catch(() => {});
     }

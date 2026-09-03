@@ -259,7 +259,7 @@ async function startInvestigation(page, attempts = 6) {
   throw new Error("Run Response never started after 6 attempts");
 }
 
-async function waitForConflictPanel(page, budgetMs = 90_000) {
+async function waitForConflictPanel(page, budgetMs = 150_000) {
   const panel = 'h2:has-text("Evidence conflict")';
   const deadline = Date.now() + budgetMs;
   let reloadedAt = 0;
@@ -267,12 +267,14 @@ async function waitForConflictPanel(page, budgetMs = 90_000) {
     if (page.isClosed()) throw new Error("the browser window was closed");
     if (await page.locator(panel).count()) return;
     const done = await page.locator(':text("Human review required")').count();
-    // Once the stream is finished, reload every few seconds until the server agrees.
-    if (done && Date.now() - reloadedAt > 5000) {
+    // Once the stream is finished, reload until the server agrees. Aggressively: the
+    // data is already written, this is only about landing on an instance that has
+    // caught up, and each reload is a fresh roll of that dice.
+    if (done && Date.now() - reloadedAt > 2500) {
       reloadedAt = Date.now();
       await page.reload({ waitUntil: "networkidle" }).catch(() => {});
     }
-    await sleep(1200);
+    await sleep(800);
   }
   throw new Error(
     "the investigation finished but the conflict panel never rendered — " +

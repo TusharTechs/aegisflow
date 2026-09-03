@@ -192,6 +192,25 @@ async function slide(page, index, to, steps = 16) {
  * will never change. Waiting for the NEXT state to appear is the only reliable
  * confirmation, so every consequential click goes through here.
  */
+/**
+ * Navigate until the page really renders.
+ *
+ * /documents/agreement/[id] calls notFound() when the serving instance has not yet
+ * seen the generated document — so a request landing on a warm instance that missed
+ * the write returns a 404, on camera, in the middle of the handoff. Retrying picks
+ * up a different instance, or the same one after its read window lapses.
+ */
+async function gotoUntil(page, url, marker, { attempts = 6, gap = 2500 } = {}) {
+  for (let i = 1; i <= attempts; i++) {
+    await page.goto(url, { waitUntil: "networkidle" }).catch(() => {});
+    await sleep(600);
+    if (await page.locator(marker).count()) return true;
+    if (i < attempts) await sleep(gap);
+  }
+  console.log(`      · ${url} never rendered ${marker} — skipping that beat`);
+  return false;
+}
+
 async function clickUntil(page, button, done, { attempts = 4, settle = 8000, label = button } = {}) {
   for (let i = 1; i <= attempts; i++) {
     await page.waitForSelector(button, { state: "visible", timeout: 30_000 });
@@ -374,13 +393,14 @@ try {
   await sleep(900 * SCALE);
 
   // The document itself — Doctavian's output carrying Nutrient's stamp.
-  await page.goto(`${BASE}/documents/agreement/${INCIDENT}`, { waitUntil: "networkidle" });
-  await sleep(1400 * SCALE);
-  await spotlight(page, ':text("PENDING HUMAN SIGNATURE")', 2200);
-  await reveal(page, 'h2:has-text("Commercial terms")', "start");
-  await sleep(1600 * SCALE);
-  await reveal(page, 'h2:has-text("Risk conditions")', "start");
-  await sleep(1400 * SCALE);
+  if (await gotoUntil(page, `${BASE}/documents/agreement/${INCIDENT}`, 'h2:has-text("Commercial terms")')) {
+    await sleep(1200 * SCALE);
+    await spotlight(page, ':text("PENDING HUMAN SIGNATURE")', 2200);
+    await reveal(page, 'h2:has-text("Commercial terms")', "start");
+    await sleep(1600 * SCALE);
+    await reveal(page, 'h2:has-text("Risk conditions")', "start");
+    await sleep(1400 * SCALE);
+  }
   await holdUntil(SCENES[5].end, SCENES[5].title);
 
   // 7 — the signature
@@ -411,11 +431,12 @@ try {
   await sleep(1600 * SCALE);
 
   // Back to the document: the signature block now names who authorised it.
-  await page.goto(`${BASE}/documents/agreement/${INCIDENT}`, { waitUntil: "networkidle" });
-  await sleep(1200 * SCALE);
-  await reveal(page, 'h2:has-text("Signature")', "start");
-  await sleep(1000 * SCALE);
-  await spotlight(page, 'h2:has-text("Signature") + *', 2400);
+  if (await gotoUntil(page, `${BASE}/documents/agreement/${INCIDENT}`, 'h2:has-text("Signature")')) {
+    await sleep(1000 * SCALE);
+    await reveal(page, 'h2:has-text("Signature")', "start");
+    await sleep(1000 * SCALE);
+    await spotlight(page, 'h2:has-text("Signature") + *', 2400);
+  }
   await holdUntil(SCENES[6].end, SCENES[6].title);
 
   // 8 — the receipts

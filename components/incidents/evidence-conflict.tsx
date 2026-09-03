@@ -89,13 +89,18 @@ export function EvidenceConflict({ incident }: { incident: Incident }) {
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {cards.map((c, i) => (
-            <div key={i} className="rounded-md border bg-card p-3">
-              <div className="flex items-center justify-between">
-                <c.icon className="h-4 w-4 text-destructive" />
-                <Badge variant="critical">{c.status}</Badge>
+            <div key={i} className="flex flex-col rounded-md border bg-card p-3">
+              <div className="flex items-start justify-between gap-2">
+                <c.icon className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+                {/* Keep the pill on one line — "NO CORROBORATION" wrapped inside it
+                    and broke the shape next to the shorter labels. */}
+                <Badge variant="critical" className="shrink-0 whitespace-nowrap text-[10px]">
+                  {c.status}
+                </Badge>
               </div>
-              <p className="mt-2 text-sm font-medium">{c.claim}</p>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">Claimed via: {c.claimSource}</p>
+              {/* A bare domain has no spaces to wrap at and ran past the card edge. */}
+              <p className="mt-2 break-words text-sm font-medium">{c.claim}</p>
+              <p className="mt-0.5 break-words text-[11px] text-muted-foreground">Claimed via: {c.claimSource}</p>
               <p className="mt-2 text-xs text-foreground">{c.finding}</p>
               {c.confidence !== undefined && (
                 <p className="mt-1 text-[11px] text-muted-foreground">Claim confidence: {c.confidence}%</p>

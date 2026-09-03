@@ -180,29 +180,36 @@ async function slide(page, index, to, steps = 16) {
  * the pre-run state. Reloading is the reliable signal.
  */
 /**
- * Click "Run Response" and make sure it actually took.
+ * Click a button and confirm the app actually moved on.
  *
- * Next renders the button server-side, so Playwright can click it before React has
- * hydrated and attached the handler — the click lands on a dead control, the run
- * never starts, and the driver then waits out its whole budget staring at an
- * Investigating page. The button unmounts once the run begins, so its disappearance
- * is the signal that the click registered; anything else means try again.
+ * Every control here belongs to a client component — a server action behind a form,
+ * or the run button. Next renders them server-side, so Playwright can click before
+ * React has hydrated and attached the handler: the click lands on a dead control,
+ * nothing happens, and the driver then waits out its whole budget on a page that
+ * will never change. Waiting for the NEXT state to appear is the only reliable
+ * confirmation, so every consequential click goes through here.
  */
-async function startInvestigation(page, attempts = 4) {
-  const btn = 'button:has-text("Run Response")';
+async function clickUntil(page, button, done, { attempts = 4, settle = 8000, label = button } = {}) {
   for (let i = 1; i <= attempts; i++) {
-    await page.waitForSelector(btn, { state: "visible", timeout: 30_000 });
-    // Give hydration a beat on the first try; later tries have already waited.
-    await sleep(i === 1 ? 1500 : 500);
-    await page.click(btn).catch(() => {});
+    await page.waitForSelector(button, { state: "visible", timeout: 30_000 });
+    await sleep(i === 1 ? 2500 : 900); // deployed hydrates slower than local
+    await page.click(button).catch(() => {});
     try {
-      await page.waitForSelector(btn, { state: "detached", timeout: 6000 });
+      await page.waitForSelector(done, { timeout: settle });
       return;
     } catch {
-      console.log(`      · Run Response did not take (attempt ${i}) — retrying`);
+      console.log(`      · ${label} did not take (attempt ${i}) — retrying`);
     }
   }
-  throw new Error('"Run Response" never started — the button stayed on screen after 4 clicks');
+  throw new Error(`${label} never advanced the workflow after ${attempts} clicks`);
+}
+
+/** The run button unmounts once the investigation starts — that is the signal. */
+async function startInvestigation(page) {
+  await clickUntil(page, 'button:has-text("Run Response")', 'div:has-text("Searching live web sources")', {
+    settle: 10_000,
+    label: "Run Response",
+  });
 }
 
 async function waitForConflictPanel(page, budgetMs = 90_000) {
@@ -349,15 +356,18 @@ try {
   await sleep(1000 * SCALE);
   await reveal(page, 'button:has-text("Approve transition")');
   await spotlight(page, 'button:has-text("Approve transition")', 1400);
-  await page.click('button:has-text("Approve transition")');
-
   // Approving moves to APPROVED and surfaces "Prepare transition package" — the
   // step that actually calls Doctavian and Nutrient. Sign only appears after it.
-  await page.waitForSelector('button:has-text("Prepare transition package")', { timeout: 60_000 });
+  await clickUntil(page, 'button:has-text("Approve transition")', 'button:has-text("Prepare transition package")', {
+    settle: 30_000,
+    label: "Approve",
+  });
   await sleep(900 * SCALE);
   await spotlight(page, 'button:has-text("Prepare transition package")', 1200);
-  await page.click('button:has-text("Prepare transition package")');
-  await page.waitForSelector('button:has-text("Sign agreement")', { timeout: 90_000 });
+  await clickUntil(page, 'button:has-text("Prepare transition package")', 'button:has-text("Sign agreement")', {
+    settle: 60_000,
+    label: "Prepare transition package",
+  });
   await sleep(900 * SCALE);
 
   // The document itself — Doctavian's output carrying Nutrient's stamp.
@@ -389,7 +399,10 @@ try {
     console.log('\n      ⏸  click "Sign agreement" yourself, then press Enter here\n');
     await new Promise((r) => process.stdin.once("data", r));
   } else {
-    await page.click('button:has-text("Sign agreement")');
+    await clickUntil(page, 'button:has-text("Sign agreement")', 'p:has-text("Signed")', {
+      settle: 60_000,
+      label: "Sign agreement",
+    });
   }
   await page.waitForSelector('p:has-text("Signed")', { timeout: 90_000 });
   await sleep(1600 * SCALE);

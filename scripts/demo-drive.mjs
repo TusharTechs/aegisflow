@@ -232,12 +232,31 @@ async function clickUntil(page, button, done, { attempts = 6, settle = 8000, lab
   throw new Error(`${label} never advanced the workflow after ${attempts} clicks`);
 }
 
-/** The run button unmounts once the investigation starts — that is the signal. */
-async function startInvestigation(page) {
-  await clickUntil(page, 'button:has-text("Run Response")', 'div:has-text("Searching live web sources")', {
-    settle: 10_000,
-    label: "Run Response",
-  });
+/**
+ * Start the run. The signal is the button UNMOUNTING, not any streamed text.
+ *
+ * Matching on a console line was wrong twice over: the line can arrive before the
+ * selector is polled, and a completed run leaves the console populated anyway. The
+ * component renders the button only while `state === INVESTIGATING && !running`, so
+ * its disappearance is the one unambiguous indication the click took.
+ */
+async function startInvestigation(page, attempts = 6) {
+  const btn = 'button:has-text("Run Response")';
+  for (let i = 1; i <= attempts; i++) {
+    if (!(await page.locator(btn).count())) return; // already running or past it
+    await page.waitForSelector(btn, { state: "visible", timeout: 30_000 });
+    await sleep(i === 1 ? 2500 : 900);
+    await page.click(btn).catch(() => {});
+    try {
+      await page.waitForSelector(btn, { state: "detached", timeout: 8000 });
+      return;
+    } catch {
+      console.log(`      · Run Response did not take (attempt ${i}) — retrying`);
+      await page.reload({ waitUntil: "networkidle" }).catch(() => {});
+      await sleep(1500);
+    }
+  }
+  throw new Error("Run Response never started after 6 attempts");
 }
 
 async function waitForConflictPanel(page, budgetMs = 90_000) {

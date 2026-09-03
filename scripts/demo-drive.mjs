@@ -403,7 +403,9 @@ page.setDefaultTimeout(120_000);
 // Silent setup — happens before the clock starts, and before the lead-in, so the
 // countdown is dead time the recorder can capture rather than a page mid-reset.
 await page.goto(`${BASE}/incidents/${INCIDENT}`, { waitUntil: "networkidle" });
-if (await exists(page, 'button:has-text("Reset demo")')) {
+// Only reset for a full take. A partial re-shoot starts mid-workflow by design, and
+// resetting here would throw away the very state the segment needs.
+if (FROM === 1 && (await exists(page, 'button:has-text("Reset demo")'))) {
   await page.click('button:has-text("Reset demo")');
   await sleep(4000);
 }

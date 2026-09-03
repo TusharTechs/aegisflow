@@ -27,11 +27,9 @@ const NAV = [
 export function AppShell({
   children,
   persistence,
-  persistenceNote,
 }: {
   children: React.ReactNode;
   persistence?: "XANO" | "LOCAL";
-  persistenceNote?: string;
 }) {
   const pathname = usePathname();
 
@@ -67,9 +65,11 @@ export function AppShell({
           <div className="mt-1">
             Persistence: <span className="font-medium text-foreground">{persistence ?? "LOCAL"}</span>
           </div>
-          {persistenceNote && (
-            <div className="mt-1 text-[10px] text-warning">Xano fell back: {persistenceNote}</div>
-          )}
+          {/* The LOCAL/XANO label above already states which store served this render.
+              The raw error string used to be printed here too, which read like a
+              crash on screen for what is usually a transient free-tier rate limit —
+              and the Integration Activity Ledger records the reason properly, with
+              the request and response, where a reader can actually judge it. */}
         </div>
       </aside>
 

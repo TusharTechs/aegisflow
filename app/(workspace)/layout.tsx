@@ -1,9 +1,9 @@
 import { AppShell } from "@/components/app-shell";
-import { persistenceMode, persistenceNote } from "@/lib/incidents/repository";
+import { persistenceMode } from "@/lib/incidents/repository";
 
 export default function WorkspaceLayout({ children }: { children: React.ReactNode }) {
   return (
-    <AppShell persistence={persistenceMode()} persistenceNote={persistenceNote()}>
+    <AppShell persistence={persistenceMode()}>
       {children}
     </AppShell>
   );

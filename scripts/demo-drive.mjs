@@ -89,7 +89,7 @@ const SCENES = [
 
 const T = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.round(s) % 60).padStart(2, "0")}`;
 
-if (has("--script")) {
+function printScript() {
   let from = 0;
   console.log(`\nAegisFlow — demo script (total ${T(SCENES[SCENES.length - 1].end)})\n${"=".repeat(64)}`);
   for (const s of SCENES) {
@@ -97,9 +97,18 @@ if (has("--script")) {
     console.log(`  ${s.say}`);
     from = s.end;
   }
-  console.log(`\n${"=".repeat(64)}\nRun without --script to drive the browser on these timings.\n`);
+  console.log(`\n${"=".repeat(64)}`);
+}
+
+// --script is just "show me the words and stop" — a normal run prints them too, so
+// there is no need to invoke the tool twice before recording.
+if (has("--script")) {
+  printScript();
+  console.log("\nRun without --script to drive the browser on these timings.\n");
   process.exit(0);
 }
+
+printScript();
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, Math.max(0, ms)));
 const actual = [];
@@ -200,7 +209,8 @@ AegisFlow demo driver
   duration : ${REHEARSE ? "as fast as it runs  (rehearsal — timings not enforced)" : T(SCENES[SCENES.length - 1].end)}
   sign     : ${MANUAL_SIGN ? "you click it" : "automatic"}
 
-Run with --script first to get the voiceover text and timings.
+The narration above is what fits each scene at speaking pace — copy it now if you
+want it beside you in CapCut; the timings do not move between runs.
 
 Press Enter and the browser opens on the landing page. You then get ${DELAY}s to
 full-screen it, start your recorder, and move the cursor off the frame — the

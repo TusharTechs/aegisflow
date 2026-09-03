@@ -12,6 +12,7 @@
  *   node scripts/demo-drive.mjs --local        # against localhost:3000
  *   node scripts/demo-drive.mjs --manual-sign  # pause so you click Sign yourself
  *   node scripts/demo-drive.mjs --rehearse     # half-length, to check it runs
+ *   node scripts/demo-drive.mjs --delay 15     # seconds of lead-in (default 10)
  *
  * First run downloads Chromium: npx playwright install chromium
  *
@@ -32,6 +33,8 @@ const BASE = has("--local")
 const INCIDENT = argOf("--incident", "INC-1042");
 const MANUAL_SIGN = has("--manual-sign");
 const SCALE = has("--rehearse") ? 0.5 : 1;
+/** Lead-in after the browser opens: full-screen it and park the cursor off-frame. */
+const DELAY = Math.max(0, Number(argOf("--delay", "10")));
 
 const SIGNER = { name: "Tushar Agarwal", title: "VP Supply Chain Risk", email: "" };
 
@@ -189,7 +192,10 @@ AegisFlow demo driver
   sign     : ${MANUAL_SIGN ? "you click it" : "automatic"}
 
 Run with --script first to get the voiceover text and timings.
-Start your recorder, capture the browser window only, then press Enter here.
+
+Press Enter and the browser opens on the landing page. You then get ${DELAY}s to
+full-screen it, start your recorder, and move the cursor off the frame — the
+clock does not start until the countdown ends.
 `);
 await new Promise((r) => process.stdin.once("data", r));
 
@@ -208,13 +214,23 @@ const browser = await chromium.launch({
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 page.setDefaultTimeout(120_000);
 
-// Silent setup — happens before the clock starts.
+// Silent setup — happens before the clock starts, and before the lead-in, so the
+// countdown is dead time the recorder can capture rather than a page mid-reset.
 await page.goto(`${BASE}/incidents/${INCIDENT}`, { waitUntil: "networkidle" });
 if (await exists(page, 'button:has-text("Reset demo")')) {
   await page.click('button:has-text("Reset demo")');
-  await sleep(3500);
+  await sleep(4000);
 }
 await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
+
+if (DELAY > 0) {
+  process.stdout.write("\n");
+  for (let i = DELAY; i > 0; i--) {
+    process.stdout.write(`\r  starting in ${String(i).padStart(2)}s — full-screen the browser, move the cursor away   `);
+    await sleep(1000);
+  }
+  process.stdout.write("\r  recording now" + " ".repeat(60) + "\n");
+}
 
 const start = Date.now();
 const clock = () => (Date.now() - start) / 1000;

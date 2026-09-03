@@ -203,6 +203,42 @@ async function slide(page, index, to, steps = 16) {
  * the write returns a 404, on camera, in the middle of the handoff. Retrying picks
  * up a different instance, or the same one after its read window lapses.
  */
+/**
+ * Fill the signing form and submit it, re-filling if a retry reloads the page.
+ *
+ * The generic clickUntil reloads between attempts, which is right for a plain
+ * button and wrong here: a reload empties the inputs and unchecks the box, so the
+ * retry submitted an empty form and the server action refused it. Filling is part
+ * of the attempt, not a step before it.
+ */
+async function signAgreement(page, signer, attempts = 5) {
+  for (let i = 1; i <= attempts; i++) {
+    await page.waitForSelector('input[name="signerName"]', { timeout: 30_000 });
+    await sleep(i === 1 ? 1200 : 700);
+    await page.fill('input[name="signerName"]', signer.name);
+    await sleep(350 * SCALE);
+    await page.fill('input[name="signerTitle"]', signer.title);
+    await sleep(350 * SCALE);
+    if (signer.email && (await page.locator('input[name="signerEmail"]').count())) {
+      await page.fill('input[name="signerEmail"]', signer.email);
+    }
+    await page.check('input[name="authorized"]').catch(() => {});
+    await sleep(600 * SCALE);
+    await page.click('button:has-text("Sign agreement")').catch(() => {});
+    try {
+      await page.waitForSelector('p:has-text("Signed")', { timeout: 45_000 });
+      return;
+    } catch {
+      console.log(`      · Sign did not take (attempt ${i}) — refilling`);
+      await page.reload({ waitUntil: "networkidle" }).catch(() => {});
+      await sleep(1500);
+      // A reload may land on an instance that already recorded the signature.
+      if (await page.locator('p:has-text("Signed")').count()) return;
+    }
+  }
+  throw new Error("the signing form never completed after 5 attempts");
+}
+
 async function gotoUntil(page, url, marker, { attempts = 6, gap = 2500 } = {}) {
   for (let i = 1; i <= attempts; i++) {
     await page.goto(url, { waitUntil: "networkidle" }).catch(() => {});
@@ -451,23 +487,12 @@ try {
   if (await exists(page, 'p:has-text("Only an authorized human can sign it")')) {
     await spotlight(page, 'p:has-text("Only an authorized human can sign it")', 2200);
   }
-  await page.fill('input[name="signerName"]', SIGNER.name);
-  await sleep(400 * SCALE);
-  await page.fill('input[name="signerTitle"]', SIGNER.title);
-  await sleep(400 * SCALE);
-  if (SIGNER.email) await page.fill('input[name="signerEmail"]', SIGNER.email);
-  await page.check('input[name="authorized"]');
-  await sleep(700 * SCALE);
   if (MANUAL_SIGN) {
     console.log('\n      ⏸  click "Sign agreement" yourself, then press Enter here\n');
     await new Promise((r) => process.stdin.once("data", r));
   } else {
-    await clickUntil(page, 'button:has-text("Sign agreement")', 'p:has-text("Signed")', {
-      settle: 60_000,
-      label: "Sign agreement",
-    });
+    await signAgreement(page, SIGNER);
   }
-  await page.waitForSelector('p:has-text("Signed")', { timeout: 90_000 });
   await sleep(1600 * SCALE);
 
   // Back to the document: the signature block now names who authorised it.

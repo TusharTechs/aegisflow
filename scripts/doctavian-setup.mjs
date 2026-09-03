@@ -11,8 +11,11 @@
  *
  * Requires in .env:
  *   DOCTAVIAN_API_KEY        subscription key
- *   DOCTAVIAN_ACCESS_TOKEN   Microsoft OAuth bearer — mint via "Get New Access
- *                            Token" in Doctavian's Postman collection
+ *   DOCTAVIAN_ACCESS_TOKEN   Microsoft OAuth bearer (~1h)
+ *   DOCTAVIAN_REFRESH_TOKEN  renews the above without a browser — preferred
+ *
+ * Either alone is enough. Both come from the SAME Postman dialog but are DIFFERENT
+ * strings; the same value does not go in both slots.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -41,18 +44,70 @@ await loadEnv();
 
 const BASE = (process.env.DOCTAVIAN_API_BASE || "https://demo.api.doctavian.com").replace(/\/$/, "");
 const KEY = process.env.DOCTAVIAN_API_KEY;
-const TOKEN = process.env.DOCTAVIAN_ACCESS_TOKEN;
+const ACCESS = process.env.DOCTAVIAN_ACCESS_TOKEN?.trim();
+const REFRESH = process.env.DOCTAVIAN_REFRESH_TOKEN?.trim();
 
 if (!KEY) die("DOCTAVIAN_API_KEY is not set.");
-if (!TOKEN)
+if (!ACCESS && !REFRESH)
   die(
-    "DOCTAVIAN_ACCESS_TOKEN is not set.\n" +
-      "  Doctavian's OAuth flow is interactive (Microsoft, authorization_code + PKCE),\n" +
-      "  so the bearer has to be minted by hand once:\n\n" +
-      "    1. open the Doctavian Postman collection\n" +
-      "    2. Authorization tab → Get New Access Token → sign in\n" +
-      "    3. copy the token into DOCTAVIAN_ACCESS_TOKEN in .env"
+    "No Doctavian token set.\n" +
+      "  The sign-in is interactive (Microsoft, authorization_code + PKCE), so the\n" +
+      "  first token is minted by hand:\n\n" +
+      "    1. Doctavian Postman collection -> Authorization -> Get New Access Token\n" +
+      "    2. sign in\n" +
+      "    3. the dialog shows TWO different strings:\n" +
+      "         access_token   -> DOCTAVIAN_ACCESS_TOKEN   (expires in ~1h)\n" +
+      "         refresh_token  -> DOCTAVIAN_REFRESH_TOKEN  (renews the above)\n\n" +
+      "  Either alone works. The refresh token is better: with it, the bearer\n" +
+      "  renews itself instead of lapsing mid-demo."
   );
+
+/** A Microsoft access token is a JWT — three dot-separated base64 segments. */
+const looksLikeJwt = (t) => /^eyJ[\w-]*\.[\w-]+\.[\w-]+$/.test(t ?? "");
+
+if (REFRESH && looksLikeJwt(REFRESH)) {
+  die(
+    "DOCTAVIAN_REFRESH_TOKEN looks like an ACCESS token, not a refresh token.\n" +
+      "  It is a JWT (starts `eyJ`, three dot-separated parts) — that is the access\n" +
+      "  token. The refresh token is a separate, longer opaque string in the same\n" +
+      "  Postman dialog, usually starting `0.A` or `M.C`. They are not interchangeable\n" +
+      "  and the same value does not go in both."
+  );
+}
+
+/** Exchange the refresh token, exactly as the app does. */
+async function mintFromRefresh() {
+  const res = await fetch(`${BASE}/public/v1/auth/microsoft/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: REFRESH,
+      // Azure requires client_id in the BODY for a public client. Postman's
+      // "Basic Auth header" default omits it on refresh — that is the AADSTS900144
+      // some people hit when using Postman's own Refresh button.
+      client_id: process.env.DOCTAVIAN_CLIENT_ID || "11e71170-3499-43f3-b878-7df343f43d37",
+    }),
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok || typeof json?.access_token !== "string") {
+    return { ok: false, why: json?.error_description ?? json?.error ?? `HTTP ${res.status}` };
+  }
+  return { ok: true, token: json.access_token, expiresIn: json.expires_in };
+}
+
+let TOKEN = ACCESS;
+if (REFRESH) {
+  const r = await mintFromRefresh();
+  if (r.ok) {
+    TOKEN = r.token;
+    console.log(`\n✓ refresh token works — minted a bearer good for ~${Math.round((r.expiresIn ?? 3600) / 60)} min`);
+  } else {
+    console.log(`\n! refresh token rejected (${r.why})`);
+    if (!ACCESS) die("and no DOCTAVIAN_ACCESS_TOKEN to fall back on.");
+    console.log("  falling back to DOCTAVIAN_ACCESS_TOKEN for this check");
+  }
+}
 
 const headers = (extra = {}) => ({ "X-Api-Key": KEY, Authorization: `Bearer ${TOKEN}`, ...extra });
 
@@ -85,9 +140,9 @@ if (check.status === 401) {
 if (!check.ok) die(`Template list failed: HTTP ${check.status}\n${JSON.stringify(check.json, null, 2).slice(0, 600)}`);
 console.log("✓ credentials accepted (X-Api-Key + OAuth bearer)");
 console.log(
-  process.env.DOCTAVIAN_REFRESH_TOKEN?.trim()
-    ? "✓ DOCTAVIAN_REFRESH_TOKEN set — the bearer renews itself"
-    : "! no DOCTAVIAN_REFRESH_TOKEN — this bearer expires in ~1h and the demo will\n  fall back to a local render when it does"
+  REFRESH
+    ? "✓ the bearer renews itself — this will still work hours from now"
+    : "! no DOCTAVIAN_REFRESH_TOKEN — this bearer expires in ~1h, and when it does the\n  approval step falls back to a local render. Fine for recording now, risky for judging."
 );
 
 console.log("\nDoctavian is ready. The agreement template is built and uploaded per run —\nnothing further to configure.\n");

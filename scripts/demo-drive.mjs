@@ -374,8 +374,13 @@ try {
 
   // 6 — the handoff
   mark(SCENES[5].title);
-  await page.goto(`${BASE}/incidents/${INCIDENT}`, { waitUntil: "networkidle" });
-  await sleep(1000 * SCALE);
+  // Approve only renders once the serving instance has HUMAN_REVIEW; a warm one that
+  // missed the write shows the pre-approval page instead, so retry until it appears.
+  await gotoUntil(page, `${BASE}/incidents/${INCIDENT}`, 'button:has-text("Approve transition")', {
+    attempts: 8,
+    gap: 2000,
+  });
+  await sleep(800 * SCALE);
   await reveal(page, 'button:has-text("Approve transition")');
   await spotlight(page, 'button:has-text("Approve transition")', 1400);
   // Approving moves to APPROVED and surfaces "Prepare transition package" — the

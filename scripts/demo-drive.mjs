@@ -32,7 +32,9 @@ const BASE = has("--local")
   : argOf("--url", "https://aegisflow-ai.vercel.app").replace(/\/$/, "");
 const INCIDENT = argOf("--incident", "INC-1042");
 const MANUAL_SIGN = has("--manual-sign");
-const SCALE = has("--rehearse") ? 0.5 : 1;
+const REHEARSE = has("--rehearse");
+/** Rehearsal shortens the deliberate pauses; it cannot shorten a live API call. */
+const SCALE = REHEARSE ? 0.5 : 1;
 /** Lead-in after the browser opens: full-screen it and park the cursor off-frame. */
 const DELAY = Math.max(0, Number(argOf("--delay", "10")));
 
@@ -69,17 +71,17 @@ const SCENES = [
     say: "The risk model is fully transparent, and you can re-weight it live. Drag cost to maximum — the setting that should favour the cheapest supplier. It still loses. A supplier carrying an unresolved evidence conflict is capped at forty-nine out of a hundred. You cannot weight your way to a bad supplier.",
   },
   {
-    end: 138,
+    end: 148,
     title: "The handoff",
-    say: "Then the AI stops. Approve, reject and sign are human-only transitions, enforced by a state machine, not a prompt. On approval, Doctavian generates the transition agreement from the structured decision payload — and it prints an unverified-claims notice on its face, because this run found a conflict.",
+    say: "Then the AI stops. Approve, reject and sign are human-only transitions, enforced by a state machine, not a prompt. On approval, Doctavian generates the Emergency Supplier Transition Agreement from the structured decision payload — real parties, real commercial terms, the evidence position written into the document itself. Nutrient stamps it PENDING HUMAN SIGNATURE before anyone sees it.",
   },
   {
-    end: 153,
+    end: 172,
     title: "The signature",
-    say: "AegisFlow prepared this agreement and prepared the signing request. It cannot sign. Foxit's own MCP server leaves signing out of the agent toolset, and we enforce that boundary in code — no non-human actor reaches an eSign folder from any state.",
+    say: "AegisFlow prepared this agreement and prepared the signing request. It cannot sign. Foxit's own MCP server leaves signing out of the agent toolset, and we enforce that boundary in code — no non-human actor reaches an eSign folder from any state. A human signs, and the document records who did it.",
   },
   {
-    end: 175,
+    end: 195,
     title: "The receipts",
     say: "And none of this asks you to take our word for it. Every sponsor API call is on the record with its real request and response, tagged for whether it ran live. Plus an append-only audit trail. AI prepares. Humans authorize.",
   },
@@ -102,9 +104,16 @@ if (has("--script")) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, Math.max(0, ms)));
 const actual = [];
 
-/** Wait out the rest of a scene so the next one starts exactly on time. */
+/**
+ * Wait out the rest of a scene so the next one starts exactly on time.
+ *
+ * Skipped entirely when rehearsing: --rehearse is a check that every step still
+ * works, and padding to a halved schedule only produced overrun warnings for work
+ * (live API calls) whose duration the schedule cannot compress anyway.
+ */
 async function holdUntil(second, title) {
-  const target = second * SCALE;
+  if (REHEARSE) return;
+  const target = second;
   const over = clock() - target;
   if (over > 1.5) console.log(`      ⚠  "${title}" ran ${over.toFixed(1)}s long — later scenes shift`);
   await sleep((target - clock()) * 1000);
@@ -188,7 +197,7 @@ const exists = async (page, sel) => (await page.locator(sel).count()) > 0;
 console.log(`
 AegisFlow demo driver
   target   : ${BASE}
-  duration : ${T(SCENES[SCENES.length - 1].end * SCALE)}${has("--rehearse") ? "  (rehearsal)" : ""}
+  duration : ${REHEARSE ? "as fast as it runs  (rehearsal — timings not enforced)" : T(SCENES[SCENES.length - 1].end)}
   sign     : ${MANUAL_SIGN ? "you click it" : "automatic"}
 
 Run with --script first to get the voiceover text and timings.
@@ -303,12 +312,31 @@ try {
   await reveal(page, 'button:has-text("Approve transition")');
   await spotlight(page, 'button:has-text("Approve transition")', 1400);
   await page.click('button:has-text("Approve transition")');
+
+  // Approving moves to APPROVED and surfaces "Prepare transition package" — the
+  // step that actually calls Doctavian and Nutrient. Sign only appears after it.
+  await page.waitForSelector('button:has-text("Prepare transition package")', { timeout: 60_000 });
+  await sleep(900 * SCALE);
+  await spotlight(page, 'button:has-text("Prepare transition package")', 1200);
+  await page.click('button:has-text("Prepare transition package")');
   await page.waitForSelector('button:has-text("Sign agreement")', { timeout: 90_000 });
-  await reveal(page, 'button:has-text("Sign agreement")');
+  await sleep(900 * SCALE);
+
+  // The document itself — Doctavian's output carrying Nutrient's stamp.
+  await page.goto(`${BASE}/documents/agreement/${INCIDENT}`, { waitUntil: "networkidle" });
+  await sleep(1400 * SCALE);
+  await spotlight(page, ':text("PENDING HUMAN SIGNATURE")', 2200);
+  await reveal(page, 'h2:has-text("Commercial terms")', "start");
+  await sleep(1600 * SCALE);
+  await reveal(page, 'h2:has-text("Risk conditions")', "start");
+  await sleep(1400 * SCALE);
   await holdUntil(SCENES[5].end, SCENES[5].title);
 
   // 7 — the signature
   mark(SCENES[6].title);
+  await page.goto(`${BASE}/incidents/${INCIDENT}`, { waitUntil: "networkidle" });
+  await sleep(800 * SCALE);
+  await reveal(page, 'button:has-text("Sign agreement")');
   if (await exists(page, 'p:has-text("Only an authorized human can sign it")')) {
     await spotlight(page, 'p:has-text("Only an authorized human can sign it")', 2200);
   }
@@ -326,6 +354,14 @@ try {
     await page.click('button:has-text("Sign agreement")');
   }
   await page.waitForSelector('p:has-text("Signed")', { timeout: 90_000 });
+  await sleep(1600 * SCALE);
+
+  // Back to the document: the signature block now names who authorised it.
+  await page.goto(`${BASE}/documents/agreement/${INCIDENT}`, { waitUntil: "networkidle" });
+  await sleep(1200 * SCALE);
+  await reveal(page, 'h2:has-text("Signature")', "start");
+  await sleep(1000 * SCALE);
+  await spotlight(page, 'h2:has-text("Signature") + *', 2400);
   await holdUntil(SCENES[6].end, SCENES[6].title);
 
   // 8 — the receipts

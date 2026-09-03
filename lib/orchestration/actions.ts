@@ -1,7 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { appendAudit, flushWrites, getIncident, resetRepository, saveIncident, transitionIncident } from "@/lib/incidents/repository";
+import {
+  appendAudit,
+  flushWrites,
+  getIncident,
+  resetRepository,
+  saveIncident,
+  saveIncidentCore,
+  transitionIncident,
+} from "@/lib/incidents/repository";
 import { rankSuppliers } from "@/lib/suppliers/ranking";
 import { buildContractPayload } from "@/lib/documents/contract";
 import {
@@ -157,7 +165,12 @@ export async function prepareDocuments(id: string) {
   await appendAudit(id, `Agreement generated (${mode === "LIVE" ? "Doctavian" : "local render"})`, "AI");
   await transitionIncident(id, "DOCUMENT_PREPARED", "SYSTEM");
   await transitionIncident(id, "SIGNATURE_REQUIRED", "SYSTEM", "Signature requested — human authorization required");
-  await flushWrites();
+  // Direct write, like the investigation: this carries the Doctavian and Nutrient
+  // ledger rows and the generated document. On the queued path they were dropped
+  // whenever the rate limit bit, so /integrations showed no Doctavian entry at all.
+  incident.state = "SIGNATURE_REQUIRED";
+  await saveIncidentCore(incident);
+  await flushWrites(3000);
   safeRevalidate(`/incidents/${id}`);
 }
 
@@ -249,7 +262,11 @@ export async function signAgreement(id: string, formData: FormData) {
     "HUMAN",
     `Agreement signed by ${signerName} (${signerTitle}) — irreversible action authorized by human`
   );
-  await flushWrites();
+  // Same reasoning: the Foxit row and the signature record are the proof that the
+  // human-authorized step happened, and must not depend on spare rate budget.
+  incident.state = "SIGNED";
+  await saveIncidentCore(incident);
+  await flushWrites(3000);
   safeRevalidate(`/incidents/${id}`);
 }
 

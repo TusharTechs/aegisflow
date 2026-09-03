@@ -76,16 +76,10 @@ class ResilientRepository implements IAegisRepository {
    * read on every render.
    */
   private hydrated = new Map<string, number>();
-  private readonly hydrationTtlMs = Number(process.env.XANO_HYDRATION_TTL_MS ?? 15000);
+  private readonly hydrationTtlMs = Number(process.env.XANO_HYDRATION_TTL_MS ?? 60000);
+  /** Only audit rows queue now — incident saves are written directly. */
   private writeQueue: Array<{ kind: "save" | "audit"; run: () => Promise<void> }> = [];
   private draining: Promise<void> | null = null;
-  /**
-   * Bumped by every incident write. A queued save captures the value at the moment
-   * it was enqueued and skips itself if a newer write has since happened — so a task
-   * that outlives its relevance (frozen mid-queue on serverless, resumed on a later
-   * request) can never put an older snapshot over a newer one.
-   */
-  private saveSeq = 0;
   degradedReason?: string;
 
   private get down(): boolean {
@@ -222,11 +216,14 @@ class ResilientRepository implements IAegisRepository {
    * reports whether it landed.
    */
   async saveCore(incident: Incident): Promise<boolean> {
+    await this.local.saveIncident(incident);
+    // Attempt even while cooling. The cooldown exists to stop READS burning the
+    // rate budget; this is one request and it carries the run. Skipping it was why
+    // a signed agreement could read HUMAN_REVIEW afterwards — the write was dropped
+    // to protect a budget it barely touches.
     if (this.hardDegraded) return false;
-    this.local.saveIncident(incident);
+    // This instance is now ahead of Xano; do not let the TTL pull the older row back.
     this.hydrated.set(incident.id, Date.now());
-    // Any save still sitting in the queue is now stale — retire it.
-    this.saveSeq++;
     try {
       await this.xano.saveIncidentCore(incident);
       return true;
@@ -285,19 +282,22 @@ class ResilientRepository implements IAegisRepository {
     return this.local.getIncident(id);
   }
 
+  /**
+   * Persist the incident. One Xano request, written now, not queued.
+   *
+   * This used to enqueue `xano.saveIncident`, whose supplier/claim fan-out is ~15
+   * paced requests. Against a 10-per-20-second budget that guaranteed rate limiting,
+   * and because a queued task carries a SNAPSHOT, one that started before a newer
+   * write could finish after it and put the older state back — which is how a signed
+   * agreement ended up reading RECOMMENDATION_READY.
+   *
+   * The incident row already carries everything the UI reads back: evidence, ledger,
+   * decision, footprints, the audit stream and the verdict overlay. The normalised
+   * supplier/claim tables are the schema the app is built on and are seeded by
+   * scripts/seed-xano.mjs; they are not on the request path.
+   */
   async saveIncident(incident: Incident): Promise<void> {
-    await this.local.saveIncident(incident);
-    // This instance just wrote, so its mirror is ahead of Xano — do not let the
-    // hydration TTL pull the older row back over it. Without this, a transition
-    // chain can re-read stale state mid-sequence and then fail its own guard
-    // (INVESTIGATING -> HUMAN_REVIEW is not a legal move).
-    this.hydrated.set(incident.id, Date.now());
-    const snapshot = structuredClone(incident);
-    const seq = ++this.saveSeq;
-    this.enqueueWrite("save", async () => {
-      if (seq !== this.saveSeq) return; // superseded while queued
-      await this.xano.saveIncident(snapshot);
-    });
+    await this.saveCore(incident);
   }
 
   async appendAudit(id: string, event: string, actor: "SYSTEM" | "AI" | "HUMAN"): Promise<void> {

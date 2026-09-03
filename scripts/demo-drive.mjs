@@ -74,17 +74,17 @@ const SCENES = [
     say: "The risk model is fully transparent, and you can re-weight it live. Drag cost to maximum — the setting that should favour the cheapest supplier. It still loses. A supplier carrying an unresolved evidence conflict is capped at forty-nine out of a hundred. You cannot weight your way to a bad supplier.",
   },
   {
-    end: 148,
+    end: 163,
     title: "The handoff",
     say: "Then the AI stops. Approve, reject and sign are human-only transitions, enforced by a state machine, not a prompt. On approval, Doctavian generates the Emergency Supplier Transition Agreement from the structured decision payload — real parties, real commercial terms, the evidence position written into the document itself. Nutrient stamps it PENDING HUMAN SIGNATURE before anyone sees it.",
   },
   {
-    end: 172,
+    end: 187,
     title: "The signature",
     say: "AegisFlow prepared this agreement and prepared the signing request. It cannot sign. Foxit's own MCP server leaves signing out of the agent toolset, and we enforce that boundary in code — no non-human actor reaches an eSign folder from any state. A human signs, and the document records who did it.",
   },
   {
-    end: 195,
+    end: 210,
     title: "The receipts",
     say: "And none of this asks you to take our word for it. Every sponsor API call is on the record with its real request and response, tagged for whether it ran live. Plus an append-only audit trail. AI prepares. Humans authorize.",
   },

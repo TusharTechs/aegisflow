@@ -90,7 +90,10 @@ const SCENES = [
   },
 ];
 
-const T = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.round(s) % 60).padStart(2, "0")}`;
+const T = (s) => {
+  const n = Math.round(s); // round once, then split — flooring the unrounded value
+  return `${String(Math.floor(n / 60)).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}`;
+};
 
 function printScript() {
   let from = 0;
@@ -437,8 +440,13 @@ try {
 
   // 7 — the signature
   mark(SCENES[6].title);
-  await page.goto(`${BASE}/incidents/${INCIDENT}`, { waitUntil: "networkidle" });
-  await sleep(800 * SCALE);
+  // The signing form renders only where the instance has SIGNATURE_REQUIRED; a warm
+  // one that missed the write shows an earlier state and page.fill would just wait.
+  await gotoUntil(page, `${BASE}/incidents/${INCIDENT}`, 'input[name="signerName"]', {
+    attempts: 8,
+    gap: 2000,
+  });
+  await sleep(700 * SCALE);
   await reveal(page, 'button:has-text("Sign agreement")');
   if (await exists(page, 'p:has-text("Only an authorized human can sign it")')) {
     await spotlight(page, 'p:has-text("Only an authorized human can sign it")', 2200);

@@ -38,6 +38,8 @@ export async function createFoxitSigningSession(opts: {
   signerName: string;
   signerEmail?: string;
   documentUrl?: string;
+  /** The agreement's own bytes, when we can supply them. Preferred over a URL. */
+  documentBytes?: Buffer | null;
 }): Promise<{ sessionId: string; status: string }> {
   if (getDemoFlags().foxit) throw new Error("Foxit failure injected for demo");
 
@@ -58,16 +60,22 @@ export async function createFoxitSigningSession(opts: {
     ],
   };
 
-  // createfolder requires a document. Use the generated agreement when it is
-  // publicly reachable; otherwise fall back to the sample so the signing folder
-  // still exists and the ledger records a real folderId.
-  const url =
-    opts.documentUrl && /^https?:\/\//.test(opts.documentUrl)
-      ? opts.documentUrl
-      : "https://app.developer-api.foxit.com/esign/foxit-esign-api-sample.pdf";
-  payload.inputType = "url";
-  payload.fileUrls = [url];
+  // createfolder needs the document itself. Prefer sending the bytes: the agreement
+  // lives behind Doctavian's authenticated storage, so passing that URL makes Foxit
+  // fetch it anonymously and fail with "error in downloading file from url". Only
+  // fall back to a URL when we have no bytes to give.
   payload.fileNames = ["emergency-supplier-transition-agreement.pdf"];
+  if (opts.documentBytes?.length) {
+    payload.inputType = "base64";
+    payload.base64FileString = [opts.documentBytes.toString("base64")];
+  } else {
+    const url =
+      opts.documentUrl && /^https?:\/\//.test(opts.documentUrl) && !/doctavian/i.test(opts.documentUrl)
+        ? opts.documentUrl
+        : "https://app.developer-api.foxit.com/esign/foxit-esign-api-sample.pdf";
+    payload.inputType = "url";
+    payload.fileUrls = [url];
+  }
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15_000);

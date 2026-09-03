@@ -246,6 +246,27 @@ export function buildGenerateRequest(payload: ContractPayload, dataUrn: string, 
   };
 }
 
+/**
+ * Fetch a generated document's bytes.
+ *
+ * The download endpoint is authenticated, so nothing outside this app can pull the
+ * agreement from its URL — including Foxit, which is why handing eSign a Doctavian
+ * link fails. We hold the credentials, so we fetch it and pass the bytes on.
+ */
+export async function fetchGeneratedPdf(url: string): Promise<Buffer | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30_000);
+  try {
+    const res = await fetch(url, { headers: await headers(), signal: controller.signal });
+    if (!res.ok) return null;
+    return Buffer.from(await res.arrayBuffer());
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function generateViaDoctavian(
   payload: ContractPayload
 ): Promise<{ url: string; urn: string; dataUrn: string; request: unknown }> {

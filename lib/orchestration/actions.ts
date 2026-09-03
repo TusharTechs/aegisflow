@@ -14,6 +14,7 @@ import { rankSuppliers } from "@/lib/suppliers/ranking";
 import { buildContractPayload } from "@/lib/documents/contract";
 import {
   DOCTAVIAN_GENERATE_ENDPOINT,
+  fetchGeneratedPdf,
   generateViaDoctavian,
   isDoctavianConfigured,
 } from "@/integrations/doctavian/client";
@@ -197,16 +198,22 @@ export async function signAgreement(id: string, formData: FormData) {
     folderName: incident.generatedDocument?.title ?? "Emergency Supplier Transition Agreement",
     sendNow: false,
     parties: [{ name: signerName, role: signerTitle, email: signerEmail ?? "(not provided)" }],
-    fileUrls: docUrl && /^https?:\/\//.test(docUrl) ? [docUrl] : "(rendered in-app)",
+    document: "the generated agreement, sent as bytes (its storage URL is authenticated)",
     authorized_by: "HUMAN",
   };
   if (isFoxitConfigured() && !foxitFail) {
     try {
+      // Fetch the agreement ourselves and hand Foxit the bytes. Its storage URL is
+      // authenticated, so Foxit fetching that link anonymously fails — which is how
+      // a working Doctavian integration was breaking the eSign one.
+      const documentBytes =
+        incident.generatedDocument?.mode === "LIVE" && docUrl ? await fetchGeneratedPdf(docUrl) : null;
       const session = await createFoxitSigningSession({
         documentTitle: foxitReq.folderName,
         signerName,
         signerEmail,
         documentUrl: docUrl,
+        documentBytes,
       });
       foxitSessionId = session.sessionId;
       await appendAudit(id, `Foxit eSign folder created (${foxitSessionId})`, "SYSTEM");

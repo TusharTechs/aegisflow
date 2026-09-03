@@ -211,7 +211,7 @@ async function gotoUntil(page, url, marker, { attempts = 6, gap = 2500 } = {}) {
   return false;
 }
 
-async function clickUntil(page, button, done, { attempts = 4, settle = 8000, label = button } = {}) {
+async function clickUntil(page, button, done, { attempts = 6, settle = 8000, label = button } = {}) {
   for (let i = 1; i <= attempts; i++) {
     await page.waitForSelector(button, { state: "visible", timeout: 30_000 });
     await sleep(i === 1 ? 2500 : 900); // deployed hydrates slower than local
@@ -221,6 +221,12 @@ async function clickUntil(page, button, done, { attempts = 4, settle = 8000, lab
       return;
     } catch {
       console.log(`      · ${label} did not take (attempt ${i}) — retrying`);
+      // Reload before trying again. A click can fail because React had not hydrated,
+      // but it can also fail because the instance serving this page holds a stale
+      // copy of the incident — in which case the server action is a no-op and only a
+      // fresh request (likely a different instance) will get anywhere.
+      await page.reload({ waitUntil: "networkidle" }).catch(() => {});
+      await sleep(1500);
     }
   }
   throw new Error(`${label} never advanced the workflow after ${attempts} clicks`);

@@ -14,6 +14,12 @@
  *   node scripts/demo-drive.mjs --rehearse     # half-length, to check it runs
  *   node scripts/demo-drive.mjs --delay 15     # seconds of lead-in (default 10)
  *   node scripts/demo-drive.mjs --no-wait      # skip the Enter prompt, close at end
+ *   node scripts/demo-drive.mjs --from 6       # start at scene 6 (for a re-shoot)
+ *   node scripts/demo-drive.mjs --ends 58,83,94  # override the remaining scene ends
+ *
+ * --from assumes the app is ALREADY in the state that scene expects (scene 6 needs
+ * the incident at HUMAN_REVIEW). Use --ends to match an earlier take's real timings
+ * so existing voiceover still lines up when the segment is spliced back in.
  *
  * First run downloads Chromium: npx playwright install chromium
  *
@@ -40,6 +46,10 @@ const SCALE = REHEARSE ? 0.5 : 1;
 const DELAY = Math.max(0, Number(argOf("--delay", "10")));
 /** Start straight into the lead-in and exit cleanly — for unattended launches. */
 const NO_WAIT = has("--no-wait");
+/** 1-indexed scene to start from, for re-shooting part of a take. */
+const FROM = Math.max(1, Number(argOf("--from", "1")));
+/** Cumulative scene ends, in seconds from the new clock zero. */
+const ENDS = argOf("--ends", "").split(",").map((n) => Number(n.trim())).filter((n) => n > 0);
 
 const SIGNER = { name: "Tushar Agarwal", title: "VP Supply Chain Risk", email: "" };
 
@@ -90,6 +100,16 @@ const SCENES = [
   },
 ];
 
+/**
+ * Scene ends, rebased for a partial re-shoot.
+ *
+ * --from keeps the clock starting at zero for the segment being re-recorded, and
+ * --ends lets those scenes match an earlier take's REAL durations so voiceover
+ * already cut to that take still lines up when the segment is spliced back in.
+ */
+const CLOCK_BASE = FROM > 1 ? SCENES[FROM - 2].end : 0;
+const endAt = (n) => (ENDS.length > n - FROM ? ENDS[n - FROM] : SCENES[n - 1].end - CLOCK_BASE);
+
 const T = (s) => {
   const n = Math.round(s); // round once, then split — flooring the unrounded value
   return `${String(Math.floor(n / 60)).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}`;
@@ -97,11 +117,15 @@ const T = (s) => {
 
 function printScript() {
   let from = 0;
-  console.log(`\nAegisFlow — demo script (total ${T(SCENES[SCENES.length - 1].end)})\n${"=".repeat(64)}`);
-  for (const s of SCENES) {
-    console.log(`\n${T(from)} – ${T(s.end)}   ${s.title.toUpperCase()}  (${s.end - from}s)`);
-    console.log(`  ${s.say}`);
-    from = s.end;
+  const total = endAt(SCENES.length);
+  console.log(
+    `\nAegisFlow — demo script (total ${T(total)})${FROM > 1 ? `  · re-shoot from scene ${FROM}` : ""}\n${"=".repeat(64)}`
+  );
+  for (let n = FROM; n <= SCENES.length; n++) {
+    const sc = SCENES[n - 1];
+    console.log(`\n${T(from)} – ${T(endAt(n))}   ${sc.title.toUpperCase()}  (${endAt(n) - from}s)`);
+    console.log(`  ${sc.say}`);
+    from = endAt(n);
   }
   console.log(`\n${"=".repeat(64)}`);
 }
@@ -405,28 +429,35 @@ console.log("\nrecording\n---------");
 
 try {
   // 1 — the bet
+  if (FROM <= 1) {
   mark(SCENES[0].title);
   await reveal(page, "#how", "start");
-  await holdUntil(SCENES[0].end, SCENES[0].title);
+  await holdUntil(endAt(1), SCENES[0].title);
+  }
 
   // 2 — the incident
+  if (FROM <= 2) {
   mark(SCENES[1].title);
   await page.goto(`${BASE}/incidents/${INCIDENT}`, { waitUntil: "networkidle" });
   // The run button is a client component; let it hydrate before scene 3 clicks it.
   await page.waitForSelector('button:has-text("Run Response")', { timeout: 30_000 }).catch(() => {});
   await sleep(1200 * SCALE);
   await spotlight(page, 'div.rounded-lg.border:has-text("Inventory remaining")', 1800);
-  await holdUntil(SCENES[1].end, SCENES[1].title);
+  await holdUntil(endAt(2), SCENES[1].title);
+  }
 
   // 3 — the investigation (the one variable-length scene)
+  if (FROM <= 3) {
   mark(SCENES[2].title);
   await startInvestigation(page);
   await sleep(700 * SCALE);
   await reveal(page, 'div.rounded-lg.border:has-text("AI response status")');
   await waitForConflictPanel(page);
-  await holdUntil(SCENES[2].end, SCENES[2].title);
+  await holdUntil(endAt(3), SCENES[2].title);
+  }
 
   // 4 — the conflict
+  if (FROM <= 4) {
   mark(SCENES[3].title);
   await reveal(page, 'h2:has-text("Evidence conflict")', "start");
   for (const label of [
@@ -439,9 +470,11 @@ try {
     if (await exists(page, sel)) await spotlight(page, sel, 1900);
     else await sleep(1500 * SCALE);
   }
-  await holdUntil(SCENES[3].end, SCENES[3].title);
+  await holdUntil(endAt(4), SCENES[3].title);
+  }
 
   // 5 — the stress test
+  if (FROM <= 5) {
   mark(SCENES[4].title);
   await page.goto(`${BASE}/incidents/${INCIDENT}/why`, { waitUntil: "networkidle" });
   await sleep(1200 * SCALE);
@@ -458,9 +491,11 @@ try {
   if (await exists(page, 'p:has-text("Integrity gate active")')) {
     await spotlight(page, 'div:has(> p:text-is("Integrity gate active"))', 2400);
   }
-  await holdUntil(SCENES[4].end, SCENES[4].title);
+  await holdUntil(endAt(5), SCENES[4].title);
+  }
 
   // 6 — the handoff
+  if (FROM <= 6) {
   mark(SCENES[5].title);
   // Approve only renders once the serving instance has HUMAN_REVIEW; a warm one that
   // missed the write shows the pre-approval page instead, so retry until it appears.
@@ -494,9 +529,11 @@ try {
     await reveal(page, 'h2:has-text("Risk conditions")', "start");
     await sleep(1400 * SCALE);
   }
-  await holdUntil(SCENES[5].end, SCENES[5].title);
+  await holdUntil(endAt(6), SCENES[5].title);
+  }
 
   // 7 — the signature
+  if (FROM <= 7) {
   mark(SCENES[6].title);
   // The signing form renders only where the instance has SIGNATURE_REQUIRED; a warm
   // one that missed the write shows an earlier state and page.fill would just wait.
@@ -524,9 +561,11 @@ try {
     await sleep(1000 * SCALE);
     await spotlight(page, 'h2:has-text("Signature") + *', 2400);
   }
-  await holdUntil(SCENES[6].end, SCENES[6].title);
+  await holdUntil(endAt(7), SCENES[6].title);
+  }
 
   // 8 — the receipts
+  if (FROM <= 8) {
   mark(SCENES[7].title);
   await page.goto(`${BASE}/integrations`, { waitUntil: "networkidle" });
   await sleep(1800 * SCALE);
@@ -535,22 +574,24 @@ try {
   await page.mouse.wheel(0, 650);
   await sleep(2200 * SCALE);
   await page.goto(`${BASE}/audit`, { waitUntil: "networkidle" });
-  await holdUntil(SCENES[7].end, SCENES[7].title);
+  await holdUntil(endAt(8), SCENES[7].title);
+  }
 } catch (err) {
   console.error(`\n✗ ${err.message}\n  Browser left open so you can see where it stopped.`);
 }
 
 console.log(`\n\nACTUAL vs PLANNED\n${"=".repeat(52)}`);
 let from = 0;
-SCENES.forEach((s, i) => {
-  const a = actual[i];
-  const drift = a ? a.at - from * SCALE : null;
+for (let n = FROM; n <= SCENES.length; n++) {
+  const sc = SCENES[n - 1];
+  const a = actual[n - FROM];
+  const drift = a ? a.at - from : null;
   console.log(
-    `${T(from * SCALE)} – ${T(s.end * SCALE)}  ${s.title.padEnd(18)}` +
+    `${T(from)} – ${T(endAt(n))}  ${sc.title.padEnd(18)}` +
       (drift === null ? "  (not reached)" : `  started ${drift >= 0 ? "+" : ""}${drift.toFixed(1)}s`)
   );
-  from = s.end;
-});
+  from = endAt(n);
+}
 console.log(`\nTotal ${T(clock())}. Stop the recorder.\n`);
 if (NO_WAIT) {
   await browser.close().catch(() => {});

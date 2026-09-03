@@ -173,7 +173,7 @@ async function uploadFile(endpoint: string, blob: Blob, filename: string, what: 
   form.append("file", blob, filename);
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20_000);
+  const timeout = setTimeout(() => controller.abort(), 30_000);
   try {
     const res = await fetch(endpoint, {
       method: "POST",
@@ -251,12 +251,30 @@ export async function generateViaDoctavian(
 ): Promise<{ url: string; urn: string; dataUrn: string; request: unknown }> {
   if (getDemoFlags().doctavian) throw new Error("Doctavian failure injected for demo");
 
+  // One retry on a transport failure. The chain is three requests, and a single
+  // dropped connection anywhere in it fails the whole generation — which then
+  // renders locally and labels itself "Doctavian not configured", a claim that is
+  // wrong and visible on screen. Auth and validation errors are not retried; there
+  // is nothing a second attempt would fix.
+  try {
+    return await attemptGenerate(payload);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/fetch failed|ECONN|ETIMEDOUT|socket|aborted|network/i.test(msg)) throw err;
+    console.warn(`[aegisflow] Doctavian transport error (${msg}); retrying once.`);
+    return attemptGenerate(payload);
+  }
+}
+
+async function attemptGenerate(
+  payload: ContractPayload
+): Promise<{ url: string; urn: string; dataUrn: string; request: unknown }> {
   // Template and data are both uploaded for this run, then tied together.
   const [templateUrn, dataUrn] = await Promise.all([uploadAgreementTemplate(), uploadContractData(payload)]);
   const body = buildGenerateRequest(payload, dataUrn, templateUrn);
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20_000);
+  const timeout = setTimeout(() => controller.abort(), 30_000);
   try {
     const res = await fetch(DOCTAVIAN_GENERATE_ENDPOINT, {
       method: "POST",

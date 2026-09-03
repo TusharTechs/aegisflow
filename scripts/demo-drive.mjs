@@ -252,23 +252,36 @@ async function gotoUntil(page, url, marker, { attempts = 6, gap = 2500 } = {}) {
 
 async function clickUntil(page, button, done, { attempts = 6, settle = 8000, label = button } = {}) {
   for (let i = 1; i <= attempts; i++) {
+    // Already advanced? Then a previous click took and we simply looked too early.
+    if (await page.locator(done).count()) return;
+
+    if (!(await page.locator(button).count())) {
+      // The button is gone but the next state has not rendered yet. That means the
+      // click DID take — retrying here would be wrong, and reloading would leave us
+      // hunting a control that correctly no longer exists. Just wait longer.
+      try {
+        await page.waitForSelector(done, { timeout: settle });
+        return;
+      } catch {
+        await page.reload({ waitUntil: "networkidle" }).catch(() => {});
+        await sleep(1500);
+        continue;
+      }
+    }
+
     await page.waitForSelector(button, { state: "visible", timeout: 30_000 });
-    await sleep(i === 1 ? 2500 : 900); // deployed hydrates slower than local
+    await sleep(i === 1 ? 2500 : 900);
     await page.click(button).catch(() => {});
     try {
       await page.waitForSelector(done, { timeout: settle });
       return;
     } catch {
       console.log(`      · ${label} did not take (attempt ${i}) — retrying`);
-      // Reload before trying again. A click can fail because React had not hydrated,
-      // but it can also fail because the instance serving this page holds a stale
-      // copy of the incident — in which case the server action is a no-op and only a
-      // fresh request (likely a different instance) will get anywhere.
       await page.reload({ waitUntil: "networkidle" }).catch(() => {});
       await sleep(1500);
     }
   }
-  throw new Error(`${label} never advanced the workflow after ${attempts} clicks`);
+  throw new Error(`${label} never advanced the workflow after ${attempts} attempts`);
 }
 
 /**
